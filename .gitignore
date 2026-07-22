@@ -1,0 +1,39 @@
+# PlatformIO build products and caches
+.pio/
+.pioenvs/
+.piolibdeps/
+.cache/
+
+# Generated language-server / compilation database files
+compile_commands.json
+.clangd/
+
+# Keep the shared VS Code recommendations and settings, ignore local state
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+
+# Local IDE metadata
+.idea/
+.project
+.cproject
+.settings/
+*.code-workspace
+
+# Operating-system metadata
+.DS_Store
+._*
+Thumbs.db
+Desktop.ini
+
+# Editor temporary files
+*.swp
+*.swo
+*~
+
+# Runtime logs and on-device log exports
+*.log
+datalog*.txt
+
+# Local whole-repository archive (source files remain tracked normally)
+/Compound_7_expensive_code.zip
