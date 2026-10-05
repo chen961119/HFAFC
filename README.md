@@ -1,4 +1,4 @@
-# Compound 7 Expensive Code
+# Highly Flexible Aircraft Flight Controller
 
 基于 Teensy 4.1 和 PlatformIO 的复合柔性多体飞行器控制固件。本工程由 dRehmFlight 演化而来，面向 A–G 多机串联构型，包含姿态估计、增稳控制、俯仰 INDI、动态控制分配、主从串口通信、舵机输出和飞行数据记录。
 

@@ -1,4 +1,4 @@
-# Compound 7 Expensive Code：仓库知识库
+# Highly Flexible Aircraft Flight Controller：仓库知识库
 
 > 基于 2026-07-22 的代码扫描。本文描述当前源码实际行为；修改 `src/main.cpp` 顶部的条件编译宏后，硬件角色和控制路径会随之改变。
 
