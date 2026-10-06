@@ -1,5 +1,11 @@
 #pragma once
 
+// PWM 逻辑中位统一为 1500 μs；机械中位由各路 trim 修正。
+constexpr int PWM_CENTER_US = 1500;
+// 保留原有中位上下的逻辑行程，换基准后限幅为 1080～1900 μs。
+constexpr int PWM_SURFACE_MIN_US = PWM_CENTER_US - 420;
+constexpr int PWM_SURFACE_MAX_US = PWM_CENTER_US + 400;
+
 // 只启用一个机体编号；物理串联顺序为 F-D-B-A-C-E-G。
 // #define APLANE
 // #define BPLANE

@@ -1,5 +1,8 @@
 #pragma once
 
+// Used by USB configuration to recognize a standalone bench-powered slave.
+bool hasReceivedParentCommand();
+
 #include <Arduino.h>
 
 // 从相邻机体接收的姿态、舵机及期望状态，供控制器和日志读取。

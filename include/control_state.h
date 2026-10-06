@@ -32,6 +32,19 @@ extern const float pwm_channel3E_trim;
 extern const float pwm_channel3F_trim;
 extern const float pwm_channel3G_trim;
 extern const float pwm_channel3_trim;
+// controlMixer() 输出的归一化控制量，供 actuator_output 缩放。
+extern float Aail1_scaled, Aail2_scaled, Aele_scaled, Athro_scaled, Arudd_scaled;
+extern float Bail1_scaled, Bail2_scaled, Bthro_scaled, Brudd_scaled;
+extern float Cail1_scaled, Cail2_scaled, Cthro_scaled, Crudd_scaled;
+extern float Dail1_scaled, Dail2_scaled, Dthro_scaled, Drudd_scaled;
+extern float Eail1_scaled, Eail2_scaled, Ethro_scaled, Erudd_scaled;
+extern float Fail1_scaled, Fail2_scaled, Fthro_scaled, Frudd_scaled;
+extern float Gail1_scaled, Gail2_scaled, Gthro_scaled, Grudd_scaled;
+extern float s6_command_scaled, s7_command_scaled;
+// 未反向的升降舵前馈控制偏移（μs），不含机械中位。
+extern float B_ele_control_ff_us, C_ele_control_ff_us, D_ele_control_ff_us, E_ele_control_ff_us, F_ele_control_ff_us, G_ele_control_ff_us;
+
+// 以下 *_PWM 是 prepare 阶段生成的最终物理输出。
 extern float Aail1_PWM;
 extern float Aail2_PWM;
 extern float Aele_PWM;

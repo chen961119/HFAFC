@@ -1,8 +1,11 @@
+#include "serial_ports.h"
 #include "control_modes.h"
+#include "parameter_registry.h"
+#include "debug_print.h"
 #include "control_state.h"
 #include "control_allocation.h"
 #include "flight_clock.h"
-#include "radioComm.h"
+#include "radio_comm.h"
 #include "human_interface.h"
 #include "interaircraft_comm.h"
 #include "math_utils.h"
@@ -16,6 +19,11 @@ static int channel_1_pwm_prev, channel_2_pwm_prev, channel_3_pwm_prev,
 
 FlightMode currentMode;
 FlightMode lastMode;
+
+// 上电时设置初始控制模式。
+void initializeInitialControlMode() {
+  currentMode = MANUAL_MODE;
+}
 bool int_is_valid = false;
 bool force_manual = false;
 
@@ -34,37 +42,38 @@ const int pwm_channel3_rev = -1;
 const int pwm_channel4_rev = 1;
 const int pwm_channel5_rev = -1;
 
+// 相比旧基准，舵面安装 trim 增加 20 μs，以保持机械中位。
 // A机
-const float pwm_channel1_trim = 190 - 30;  // 减少是向上 20是偏置
-const float pwm_channel2_trim = -205 + 30; // 减少是向上
+const float pwm_channel1_trim = 180;  // 减少是向上 安装偏置
+const float pwm_channel2_trim = -155; // 减少是向上
 
 // 襟副翼微调
-const float pwm_channel1B_trim = 215 - 30;  // 减少是向上
-const float pwm_channel2B_trim = -70 + 30;  // 减少是向上
-const float pwm_channel1C_trim = 160 - 30;  // 减少是向上
-const float pwm_channel2C_trim = -202 + 30; // 减少是向上
-const float pwm_channel1D_trim = 132 - 30;  // 减少是向上
-const float pwm_channel2D_trim = -213 + 30; // 减少是向上
-const float pwm_channel1E_trim = 150 - 30;  // 减少是向上
-const float pwm_channel2E_trim = -220 + 30; // 减少是向上
-const float pwm_channel1F_trim = 144 - 10;  // 减少是向上
-const float pwm_channel2F_trim = -217 + 10; // 减少是向上
-const float pwm_channel1G_trim = 180 - 10;  // 减少是向上
-const float pwm_channel2G_trim = -200 + 10; // 减少是向上
+const float pwm_channel1B_trim = 205;  // 减少是向上
+const float pwm_channel2B_trim = -20;  // 减少是向上
+const float pwm_channel1C_trim = 150;  // 减少是向上
+const float pwm_channel2C_trim = -152; // 减少是向上
+const float pwm_channel1D_trim = 122;  // 减少是向上
+const float pwm_channel2D_trim = -163; // 减少是向上
+const float pwm_channel1E_trim = 140;  // 减少是向上
+const float pwm_channel2E_trim = -170; // 减少是向上
+const float pwm_channel1F_trim = 154;  // 减少是向上
+const float pwm_channel2F_trim = -187; // 减少是向上
+const float pwm_channel1G_trim = 190;  // 减少是向上
+const float pwm_channel2G_trim = -170; // 减少是向上
 
 // 升降舵微调，手动模式用
-const float pwm_channel3B_trim = 42;
-const float pwm_channel3C_trim = -50; // 对于子机也要修正
-const float pwm_channel3D_trim = 150;
-const float pwm_channel3E_trim = -50;
-const float pwm_channel3F_trim = 9;
-const float pwm_channel3G_trim = 180;
+const float pwm_channel3B_trim = 62;
+const float pwm_channel3C_trim = -30; // 对于子机也要修正
+const float pwm_channel3D_trim = 170;
+const float pwm_channel3E_trim = -30;
+const float pwm_channel3F_trim = 29;
+const float pwm_channel3G_trim = 200;
 
 // 当前飞机
 
 #if defined APLANE
 const float pwm_channel3_trim =
-    20; // 减少是向上  对于子机，也要修正,是用来增稳模式的 A是180 载机是10
+    40; // A 机升降舵安装微调，增稳模式使用。
 #elif defined BPLANE
 const float pwm_channel3_trim = pwm_channel3B_trim;
 #elif defined CPLANE
@@ -79,14 +88,15 @@ const float pwm_channel3_trim = pwm_channel3F_trim;
 const float pwm_channel3_trim = pwm_channel3G_trim;
 #endif
 
+// 油门以 1100 μs 为起点，输出中位相消，trim 保持原值。
 const float pwm_channel4_trim = 0;
-const float pwm_channel5_trim = 0;
+const float pwm_channel5_trim = 20;
 
 // 载机
 #if defined TESTBED
-const float pwm_channel1_trim = 170 - 30;  // 减少是向上 20是偏置
-const float pwm_channel2_trim = -240 + 30; // 减少是向上
-const float pwm_channel3_trim = 10;        // 减少是向上
+const float pwm_channel1_trim = 160;  // 减少是向上 安装偏置
+const float pwm_channel2_trim = -190; // 减少是向上
+const float pwm_channel3_trim = 30;        // 减少是向上
 #endif
 
 static int outputpwm1, outputpwm2, outputpwm3, outputpwm4, outputpwm5;
@@ -118,33 +128,16 @@ static float Trim_pitch_angle = 8.0;
 // 控制输出与各机指令状态。
 //  刹车
 float ailBrake_PWM = 0.0, flap2eleratio = 0.0;
-// A组控制变量
-float Aail1_PWM, Aail2_PWM, Aele_PWM, Athro_PWM, Arudd_PWM, A_pitch_sp = 0.0;
-// B组控制变量
-float Bail1_PWM, Bail2_PWM, B_pitch_sp, Bthro_PWM, Brudd_PWM,
-    B_ele_command_PWM_Manual, B_ele_command_PWM_FF = 0.0f;
-// C组控制变量
-float Cail1_PWM, Cail2_PWM, C_pitch_sp, Cthro_PWM, Crudd_PWM,
-    C_ele_command_PWM_Manual, C_ele_command_PWM_FF = 0.0f;
-// D组控制变量
-float Dail1_PWM, Dail2_PWM, D_pitch_sp, Dthro_PWM, Drudd_PWM,
-    D_ele_command_PWM_Manual, D_ele_command_PWM_FF = 0.0f;
-// E组控制变量
-float Eail1_PWM, Eail2_PWM, E_pitch_sp, Ethro_PWM, Erudd_PWM,
-    E_ele_command_PWM_Manual, E_ele_command_PWM_FF = 0.0f;
-// F组控制变量
-float Fail1_PWM, Fail2_PWM, F_pitch_sp, Fthro_PWM, Frudd_PWM,
-    F_ele_command_PWM_Manual, F_ele_command_PWM_FF = 0.0f;
-// G组控制变量
-float Gail1_PWM, Gail2_PWM, G_pitch_sp, Gthro_PWM, Grudd_PWM,
-    G_ele_command_PWM_Manual, G_ele_command_PWM_FF = 0.0f;
-
+// 主机分发的俯仰目标（度）及升降舵逻辑前馈偏移（μs）。
+float A_pitch_sp, B_pitch_sp, C_pitch_sp, D_pitch_sp, E_pitch_sp, F_pitch_sp, G_pitch_sp;
+float B_ele_control_ff_us, C_ele_control_ff_us, D_ele_control_ff_us,
+    E_ele_control_ff_us, F_ele_control_ff_us, G_ele_control_ff_us;
 
 static float Local_pitch_des_last = 8; // 期望当地俯仰角
-static int Local_rudd_PWM_last = 1520;
+static int Local_rudd_PWM_last = PWM_CENTER_US;
 static int Local_thro_PWM_last = 1111;
-static int Local_ail2_PWM_last = 1520;
-static int Local_ail1_PWM_last = 1520;
+static int Local_ail2_PWM_last = PWM_CENTER_US;
+static int Local_ail1_PWM_last = PWM_CENTER_US;
 static float relativeAngle_ready_prev;
 
 
@@ -242,6 +235,42 @@ static float Kp_yaw = 0.2;     // 偏航角速度比例增益。
 static float Ki_yaw = 0.05;    // 偏航角速度积分增益。
 static float Kd_yaw = 0.00000; // 偏航角速度微分增益；当前设为零。
 
+const FlightParameter *controlParameterTable(size_t &count) {
+  // Keep registration beside the private variables, without exporting them.
+  static const FlightParameter parameters[] = {
+      {"Kp_roll_angle", &Kp_roll_angle, 0, 10, "Attitude", "Roll angle P"},
+      {"Ki_roll_angle", &Ki_roll_angle, 0, 10, "Attitude", "Roll angle I"},
+      {"Kd_roll_angle", &Kd_roll_angle, 0, 1, "Attitude", "Roll angle D (controlANGLE only)"},
+      {"Kp_pitch_angle", &Kp_pitch_angle, 0, 10, "Attitude", "Pitch angle P"},
+      {"Ki_pitch_angle", &Ki_pitch_angle, 0, 10, "Attitude", "Pitch angle I"},
+      {"Kd_pitch_angle", &Kd_pitch_angle, 0, 1, "Attitude", "Pitch angle D (controlANGLE only)"},
+      {"B_loop_roll", &B_loop_roll, 0, 1, "Attitude", "Roll outer-loop filter coefficient"},
+      {"B_loop_pitch", &B_loop_pitch, 0, 1, "Attitude", "Pitch outer-loop coefficient"},
+      {"Kp_roll_rate", &Kp_roll_rate, 0, 10, "Attitude", "Roll rate P"},
+      {"Ki_roll_rate", &Ki_roll_rate, 0, 10, "Attitude", "Roll rate I"},
+      {"Kd_roll_rate", &Kd_roll_rate, 0, 1, "Attitude", "Roll rate D"},
+      {"Kff_roll_rate", &Kff_roll_rate, 0, 10, "Attitude", "Roll rate feedforward"},
+      {"Kp_pitch_rate", &Kp_pitch_rate, 0, 10, "Attitude", "Pitch rate P"},
+      {"Ki_pitch_rate", &Ki_pitch_rate, 0, 10, "Attitude", "Pitch rate I"},
+      {"Kd_pitch_rate", &Kd_pitch_rate, 0, 1, "Attitude", "Pitch rate D"},
+      {"Kff_pitch_rate", &Kff_pitch_rate, 0, 10, "Attitude", "Pitch rate feedforward"},
+      {"Kp_yaw", &Kp_yaw, 0, 10, "Attitude", "Yaw rate P"},
+      {"Ki_yaw", &Ki_yaw, 0, 10, "Attitude", "Yaw rate I"},
+      {"Kd_yaw", &Kd_yaw, 0, 1, "Attitude", "Yaw rate D"},
+      {"Kff_yaw_rate", &Kff_yaw_rate, 0, 10, "Attitude", "Yaw rate feedforward"},
+      {"Kp_Flap", &Kp_Flap, 0, 10, "Configuration", "Relative angle P"},
+      {"Kp_FLAP_RATE", &Kp_FLAP_RATE, 0, 10, "Configuration", "Relative rate P"},
+      {"Ki_FLAP_RATE", &Ki_FLAP_RATE, 0, 10, "Configuration", "Relative rate I"},
+      {"Kff_FLAP_RATE", &Kff_FLAP_RATE, 0, 10, "Configuration", "Relative rate feedforward"},
+      {"B_loop_FLAP", &B_loop_FLAP, 0, 1, "Configuration", "Relative outer-loop filter coefficient"},
+      {"indi_pitch_q_gain", &indi_pitch_q_gain, 0.01f, 1000, "INDI", "Pitch rate error gain (1/s)"},
+      {"indi_pitch_effectiveness", &indi_pitch_effectiveness, -10000, -0.001f, "INDI", "Elevator effectiveness (deg/s^2 per deg)"},
+      {"usb_throttle_debug", &localThrottleDebugSetting(), 0, 1, "Debug", "Throttle USB log: 0 off, 1 on (10 Hz)"},
+  };
+  count = sizeof(parameters) / sizeof(parameters[0]);
+  return parameters;
+}
+
 
 static float roll_IMU_prev, pitch_IMU_prev;
 
@@ -312,14 +341,14 @@ static float m1_command_scaled, m2_command_scaled, m3_command_scaled,
     m4_command_scaled, m5_command_scaled, m6_command_scaled;
 int m1_command_PWM, m2_command_PWM, m3_command_PWM, m4_command_PWM,
     m5_command_PWM, m6_command_PWM;
-static float Aail1_scaled, Aail2_scaled, Aele_scaled, Athro_scaled, Arudd_scaled,
+float Aail1_scaled, Aail2_scaled, Aele_scaled, Athro_scaled, Arudd_scaled,
     s6_command_scaled, s7_command_scaled;
-static float Bail1_scaled, Bail2_scaled, Bele_scaled, Bthro_scaled, Brudd_scaled;
-static float Cail1_scaled, Cail2_scaled, Cele_scaled, Cthro_scaled, Crudd_scaled;
-static float Dail1_scaled, Dail2_scaled, Dele_scaled, Dthro_scaled, Drudd_scaled;
-static float Eail1_scaled, Eail2_scaled, Eele_scaled, Ethro_scaled, Erudd_scaled;
-static float Fail1_scaled, Fail2_scaled, Fele_scaled, Fthro_scaled, Frudd_scaled;
-static float Gail1_scaled, Gail2_scaled, Gele_scaled, Gthro_scaled, Grudd_scaled;
+float Bail1_scaled, Bail2_scaled, Bele_scaled, Bthro_scaled, Brudd_scaled;
+float Cail1_scaled, Cail2_scaled, Cele_scaled, Cthro_scaled, Crudd_scaled;
+float Dail1_scaled, Dail2_scaled, Dele_scaled, Dthro_scaled, Drudd_scaled;
+float Eail1_scaled, Eail2_scaled, Eele_scaled, Ethro_scaled, Erudd_scaled;
+float Fail1_scaled, Fail2_scaled, Fele_scaled, Fthro_scaled, Frudd_scaled;
+float Gail1_scaled, Gail2_scaled, Gele_scaled, Gthro_scaled, Grudd_scaled;
 
 int s6_command_PWM, s7_command_PWM;
 
@@ -413,7 +442,7 @@ central_pitch=-45.0*coeroll*roll_PID;
 }
 
 */
-// Serial.println(Aail1_scaled);
+// USBSerial.println(Aail1_scaled);
 
 // 3机一起飞 BAC
 #if defined THREEPLANE
@@ -470,7 +499,7 @@ central_pitch=-45.0*coeroll*roll_PID;
         thro_des + keeppositive(-1.2 * yaw_PID) + keeppositive(0.4 * roll_PID);
     Brudd_scaled = yaw_PID;
     B_pitch_sp = pitch_des_local + 20.0 * roll_PID_lpf; // 2机、3机
-    B_ele_command_PWM_FF = 0.0;
+    B_ele_control_ff_us = 0.0;
 
     Aail1_scaled =
         0.1 * roll_PID - coeab * 1.0 * Phiab_PID + coeac * 0.65 * Phiac_PID;
@@ -488,7 +517,7 @@ central_pitch=-45.0*coeroll*roll_PID;
         thro_des + keeppositive(1.2 * yaw_PID) + keeppositive(-0.4 * roll_PID);
     Crudd_scaled = yaw_PID;
     C_pitch_sp = pitch_des_local - 20.0 * roll_PID_lpf; // 2机、3机
-    C_ele_command_PWM_FF = 0.0;
+    C_ele_control_ff_us = 0.0;
 
   } else {
     coeroll = 0.2;
@@ -502,7 +531,7 @@ central_pitch=-45.0*coeroll*roll_PID;
     Brudd_scaled = yaw_PID;
     B_pitch_sp = pitch_des_local + 30.0 * roll_PID_lpf +
                  6.0 * (Bail1_scaled + Bail2_scaled); // 2机、3机
-    B_ele_command_PWM_FF =
+    B_ele_control_ff_us =
         -10.0 * 20.0 * roll_PID_lpf - 10.0 * roll_PID_dot_lpf;
 
     Aail1_scaled =
@@ -523,7 +552,7 @@ central_pitch=-45.0*coeroll*roll_PID;
     C_pitch_sp =
         pitch_des_local - 30.0 * roll_PID_lpf +
         6.0 * (Cail1_scaled + Cail2_scaled); // 2机、3机 增加了相对滚转到升降舵
-    C_ele_command_PWM_FF = 10.0 * 20.0 * roll_PID_lpf + 10.0 * roll_PID_dot_lpf;
+    C_ele_control_ff_us = 10.0 * 20.0 * roll_PID_lpf + 10.0 * roll_PID_dot_lpf;
   }
 
 #elif defined FOURPLANE
@@ -534,7 +563,7 @@ central_pitch=-45.0*coeroll*roll_PID;
 
   coeroll = 1.5;
 
-  // Serial.println(coeroll);
+  // USBSerial.println(coeroll);
   if (abs(error_Phiab) > 20) {
     coeab = 1.2 * abs(error_Phiab) / 20.0;
   } else {
@@ -804,7 +833,7 @@ central_pitch=-45.0*coeroll*roll_PID;
    }
 
    else {
-     //Serial.println("ss");
+     //USBSerial.println("ss");
      //策略3 实时控制分配
      //期望虚拟控制量
      dw4 = roll_PID * 40.0;
@@ -1022,9 +1051,9 @@ void getDesState() { // 调整了通道顺序
 #if defined APLANE // 是主机
   {
     thro_des_RAW = (channel_3_pwm - 1100.0) / 1000.0; // 范围 0～1。
-    roll_des_RAW = (channel_1_pwm - 1520.0) / 500.0;  // 范围 -1～1。
-    pitch_des_RAW = (channel_2_pwm - 1520.0) / 500.0; // 范围 -1～1。
-    yaw_des_RAW = (channel_4_pwm - 1520.0) / 500.0;   // 范围 -1～1。
+    roll_des_RAW = (channel_1_pwm - PWM_CENTER_US) / 500.0;  // 范围 -1～1。
+    pitch_des_RAW = (channel_2_pwm - PWM_CENTER_US) / 500.0; // 范围 -1～1。
+    yaw_des_RAW = (channel_4_pwm - PWM_CENTER_US) / 500.0;   // 范围 -1～1。
 
     /*
     if (channel_6_pwm>1600) //水平构型
@@ -1125,98 +1154,98 @@ void getDesState() { // 调整了通道顺序
     thro_des = 0;
     roll_des = 0;
     pitch_des_local = Local_pitch_des;
-    // Serial.println(pitch_des_local);
+    // USBSerial.println(pitch_des_local);
     yaw_des = 0;
   }
 #endif
 }
 
 // 单环控制：滚转、俯仰使用角度误差，偏航使用陀螺仪角速度误差。
-void controlANGLE() {
-  // 单环姿态 PID：用期望角与测量角之差计算滚转、俯仰控制量。
-  // 积分项限幅；通道 1 低于阈值时清零，输出供 controlMixer() 分配。
-  float GyroZ;
-  float GyroY;
-  float GyroX;
-#if defined USE_MPU6050_I2C
-  GyroZ = GyroZ_6050;
-  GyroY = GyroY_6050;
-  GyroX = -GyroX_6050; // 安装位置
-#endif
-#if defined USE_MPU9250_SPI
-  GyroZ = GyroZ_9250;
-  GyroY = GyroY_9250;
-  GyroX = -GyroX_9250;
-#endif
-  // rotate_speed
+// void controlANGLE() {
+//   // 单环姿态 PID：用期望角与测量角之差计算滚转、俯仰控制量。
+//   // 积分项限幅；通道 1 低于阈值时清零，输出供 controlMixer() 分配。
+//   float GyroZ;
+//   float GyroY;
+//   float GyroX;
+// #if defined USE_MPU6050_I2C
+//   GyroZ = GyroZ_6050;
+//   GyroY = GyroY_6050;
+//   GyroX = -GyroX_6050; // 安装位置
+// #endif
+// #if defined USE_MPU9250_SPI
+//   GyroZ = GyroZ_9250;
+//   GyroY = GyroY_9250;
+//   GyroX = -GyroX_9250;
+// #endif
+//   // rotate_speed
 
-  rotate_error = rotate_speed_des * 1000.0 - GyroZ;
-  rotate_error = constrain(rotate_error, -100, 100); // 100度每秒
-  // thro_des=0.01*kp_rotate*rotate_error;//0-1
+//   rotate_error = rotate_speed_des * 1000.0 - GyroZ;
+//   rotate_error = constrain(rotate_error, -100, 100); // 100度每秒
+//   // thro_des=0.01*kp_rotate*rotate_error;//0-1
 
-  // 滚转通道。
-  error_roll = roll_des - roll_IMU;
-  integral_roll = integral_roll_prev + error_roll * dt;
-  if (channel_3_pwm <
-      1160) { // 通道 1 低于阈值时清零积分项。
-    integral_roll = 0;
-  }
-  integral_roll =
-      constrain(integral_roll, -i_limit,
-                i_limit); // 对积分项限幅，防止持续饱和。
-  derivative_roll = GyroX;
-  roll_PID =
-      0.01 *
-      (Kp_roll_angle * error_roll + Ki_roll_angle * integral_roll -
-       Kd_roll_angle *
-           derivative_roll); // 按控制器约定缩放输出量。
+//   // 滚转通道。
+//   error_roll = roll_des - roll_IMU;
+//   integral_roll = integral_roll_prev + error_roll * dt;
+//   if (channel_3_pwm <
+//       1160) { // 通道 1 低于阈值时清零积分项。
+//     integral_roll = 0;
+//   }
+//   integral_roll =
+//       constrain(integral_roll, -i_limit,
+//                 i_limit); // 对积分项限幅，防止持续饱和。
+//   derivative_roll = GyroX;
+//   roll_PID =
+//       0.01 *
+//       (Kp_roll_angle * error_roll + Ki_roll_angle * integral_roll -
+//        Kd_roll_angle *
+//            derivative_roll); // 按控制器约定缩放输出量。
 
-  // 俯仰通道。
-  error_pitch = pitch_des - pitch_IMU;
-  integral_pitch = integral_pitch_prev + error_pitch * dt;
-  if (channel_3_pwm <
-      1160) { // 通道 1 低于阈值时清零积分项。
-    integral_pitch = 0;
-  }
-  integral_pitch =
-      constrain(integral_pitch, -i_limit,
-                i_limit); // 对积分项限幅，防止持续饱和。
-  derivative_pitch = GyroY;
-  pitch_PID =
-      .01 *
-      (Kp_pitch_angle * error_pitch + Ki_pitch_angle * integral_pitch -
-       Kd_pitch_angle *
-           derivative_pitch); // 按控制器约定缩放输出量。
+//   // 俯仰通道。
+//   error_pitch = pitch_des - pitch_IMU;
+//   integral_pitch = integral_pitch_prev + error_pitch * dt;
+//   if (channel_3_pwm <
+//       1160) { // 通道 1 低于阈值时清零积分项。
+//     integral_pitch = 0;
+//   }
+//   integral_pitch =
+//       constrain(integral_pitch, -i_limit,
+//                 i_limit); // 对积分项限幅，防止持续饱和。
+//   derivative_pitch = GyroY;
+//   pitch_PID =
+//       .01 *
+//       (Kp_pitch_angle * error_pitch + Ki_pitch_angle * integral_pitch -
+//        Kd_pitch_angle *
+//            derivative_pitch); // 按控制器约定缩放输出量。
 
-  // 偏航通道使用 Z 轴角速度反馈。
+//   // 偏航通道使用 Z 轴角速度反馈。
 
-  // yaw_des=yaw_des;
-  error_yaw =
-      yaw_des -
-      57.3 * (9.8 / V_cruise * tan(roll_des / 57.3) * cos(pitch_des / 57.3)) -
-      GyroZ;
-  integral_yaw = integral_yaw_prev + error_yaw * dt;
-  if (channel_3_pwm <
-      1160) { // 通道 1 低于阈值时清零积分项。
-    integral_yaw = 0;
-  }
-  integral_yaw =
-      constrain(integral_yaw, -i_limit,
-                i_limit); // 对积分项限幅，防止持续饱和。
-  derivative_yaw = (error_yaw - error_yaw_prev) / dt;
-  yaw_PID =
-      .01 *
-      (Kp_yaw * error_yaw + Ki_yaw * integral_yaw +
-       Kd_yaw * derivative_yaw); // 按控制器约定缩放输出量。
+//   // yaw_des=yaw_des;
+//   error_yaw =
+//       yaw_des -
+//       57.3 * (9.8 / V_cruise * tan(roll_des / 57.3) * cos(pitch_des / 57.3)) -
+//       GyroZ;
+//   integral_yaw = integral_yaw_prev + error_yaw * dt;
+//   if (channel_3_pwm <
+//       1160) { // 通道 1 低于阈值时清零积分项。
+//     integral_yaw = 0;
+//   }
+//   integral_yaw =
+//       constrain(integral_yaw, -i_limit,
+//                 i_limit); // 对积分项限幅，防止持续饱和。
+//   derivative_yaw = (error_yaw - error_yaw_prev) / dt;
+//   yaw_PID =
+//       .01 *
+//       (Kp_yaw * error_yaw + Ki_yaw * integral_yaw +
+//        Kd_yaw * derivative_yaw); // 按控制器约定缩放输出量。
 
-  // 保存滚转状态，供下一周期计算。
-  integral_roll_prev = integral_roll;
-  // 保存俯仰状态，供下一周期计算。
-  integral_pitch_prev = integral_pitch;
-  // 保存偏航状态，供下一周期计算。
-  error_yaw_prev = error_yaw;
-  integral_yaw_prev = integral_yaw;
-}
+//   // 保存滚转状态，供下一周期计算。
+//   integral_roll_prev = integral_roll;
+//   // 保存俯仰状态，供下一周期计算。
+//   integral_pitch_prev = integral_pitch;
+//   // 保存偏航状态，供下一周期计算。
+//   error_yaw_prev = error_yaw;
+//   integral_yaw_prev = integral_yaw;
+// }
 
 // 用当前滚转角速度生成等效滚转阻尼补偿，并换算为副翼 PWM 修正量。
 void increase_Clp() {
@@ -1249,9 +1278,9 @@ void controlANGLE2() {
   GyroY = gyroFiltY.apply(GyroY_6050);
   GyroX = -gyroFiltX.apply(GyroX_6050); // 安装位置
 
-  // Serial.print(GyroY_6050);
-  // Serial.print(" ");
-  // Serial.println(GyroY);
+  // USBSerial.print(GyroY_6050);
+  // USBSerial.print(" ");
+  // USBSerial.println(GyroY);
 #endif
 #if defined USE_MPU9250_SPI
   GyroZ = GyroZ_9250;
@@ -1335,7 +1364,7 @@ void controlANGLE2() {
                     integral_roll_ol; // - Kd_roll_angle*derivative_roll;
 
   // 俯仰通道。
-  // Serial.println(pitch_des_local);
+  // USBSerial.println(pitch_des_local);
 
 #if defined APLANE
 
@@ -1349,7 +1378,7 @@ void controlANGLE2() {
   error_pitch = pitch_des_local - pitch_IMU;
 #endif
 
-  // Serial.println(error_pitch);
+  // USBSerial.println(error_pitch);
   // error_pitch = pitch_des_local - pitch_IMU;
   integral_pitch_ol = integral_pitch_prev_ol + error_pitch * dt;
   if (channel_1_pwm <
@@ -1398,7 +1427,7 @@ void controlANGLE2() {
              7.0; // 7机等效滚转角速度
 #endif
 #endif
-  // Serial.println(Rollrate);
+  // USBSerial.println(Rollrate);
 
   error_roll = roll_des_ol - Rollrate;
   integral_roll_il = integral_roll_prev_il + error_roll * dt;
@@ -1448,7 +1477,7 @@ void controlANGLE2() {
     roll_PID_prev = roll_PID;
   }
 
-  // Serial.println(roll_PID_dot_lpf);
+  // USBSerial.println(roll_PID_dot_lpf);
 
   // 俯仰通道。
   error_pitch = pitch_des_ol - GyroY;
@@ -1470,7 +1499,7 @@ void controlANGLE2() {
        i_valid * Ki_pitch_rate * integral_pitch_il +
        Kd_pitch_rate *
            derivative_pitch); // 按控制器约定缩放输出量。
-  // Serial.println(integral_pitch_il);
+  // USBSerial.println(integral_pitch_il);
   // 偏航通道。
   error_yaw =
       yaw_des -
@@ -1513,90 +1542,90 @@ void controlANGLE2() {
 }
 
 // 角速度模式 PID：用期望角速度和陀螺仪读数计算三轴控制量。
-void controlRATE() {
-  // 角速度模式：以期望角速度与陀螺仪读数之差计算控制量。
+// void controlRATE() {
+//   // 角速度模式：以期望角速度与陀螺仪读数之差计算控制量。
 
-  float GyroZ;
-  float GyroY;
-  float GyroX;
-#if defined USE_MPU6050_I2C
-  GyroZ = GyroZ_6050;
-  GyroY = GyroY_6050;
-  GyroX = -GyroX_6050;
-#endif
-#if defined USE_MPU9250_SPI
-  GyroZ = GyroZ_9250;
-  GyroY = GyroY_9250;
-  GyroX = -GyroX_9250;
-#endif
-#if defined EXTIMU
-  GyroX = Gyro_X_EXT;
-  GyroY = Gyro_Y_EXT;
-  GyroZ = Gyro_Z_EXT;
-#endif
+//   float GyroZ;
+//   float GyroY;
+//   float GyroX;
+// #if defined USE_MPU6050_I2C
+//   GyroZ = GyroZ_6050;
+//   GyroY = GyroY_6050;
+//   GyroX = -GyroX_6050;
+// #endif
+// #if defined USE_MPU9250_SPI
+//   GyroZ = GyroZ_9250;
+//   GyroY = GyroY_9250;
+//   GyroX = -GyroX_9250;
+// #endif
+// #if defined EXTIMU
+//   GyroX = Gyro_X_EXT;
+//   GyroY = Gyro_Y_EXT;
+//   GyroZ = Gyro_Z_EXT;
+// #endif
 
-  // 滚转通道。
-  error_roll = roll_des * 3.0 - GyroX;
-  integral_roll = integral_roll_prev + error_roll * dt;
-  if (channel_1_pwm <
-      1060) { // 通道 1 低于阈值时清零积分项。
-    integral_roll = 0;
-  }
-  integral_roll =
-      constrain(integral_roll, -i_limit,
-                i_limit); // 对积分项限幅，防止持续饱和。
-  derivative_roll = (error_roll - error_roll_prev) / dt;
-  roll_PID =
-      .01 *
-      (Kff_roll_rate * roll_des + Kp_roll_rate * error_roll +
-       Kd_roll_rate *
-           derivative_roll); // 按控制器约定缩放输出量。
+//   // 滚转通道。
+//   error_roll = roll_des * 3.0 - GyroX;
+//   integral_roll = integral_roll_prev + error_roll * dt;
+//   if (channel_1_pwm <
+//       1060) { // 通道 1 低于阈值时清零积分项。
+//     integral_roll = 0;
+//   }
+//   integral_roll =
+//       constrain(integral_roll, -i_limit,
+//                 i_limit); // 对积分项限幅，防止持续饱和。
+//   derivative_roll = (error_roll - error_roll_prev) / dt;
+//   roll_PID =
+//       .01 *
+//       (Kff_roll_rate * roll_des + Kp_roll_rate * error_roll +
+//        Kd_roll_rate *
+//            derivative_roll); // 按控制器约定缩放输出量。
 
-  // 俯仰通道。
-  error_pitch = pitch_des_local * 3.0 - GyroY;
-  integral_pitch = integral_pitch_prev + error_pitch * dt;
-  if (channel_1_pwm <
-      1060) { // 通道 1 低于阈值时清零积分项。
-    integral_pitch = 0;
-  }
-  integral_pitch =
-      constrain(integral_pitch, -i_limit,
-                i_limit); // 对积分项限幅，防止持续饱和。
-  derivative_pitch = (error_pitch - error_pitch_prev) / dt;
-  pitch_PID =
-      .01 *
-      (Kff_pitch_rate * pitch_des + Kp_pitch_rate * error_pitch +
-       Kd_pitch_rate *
-           derivative_pitch); // 按控制器约定缩放输出量。
+//   // 俯仰通道。
+//   error_pitch = pitch_des_local * 3.0 - GyroY;
+//   integral_pitch = integral_pitch_prev + error_pitch * dt;
+//   if (channel_1_pwm <
+//       1060) { // 通道 1 低于阈值时清零积分项。
+//     integral_pitch = 0;
+//   }
+//   integral_pitch =
+//       constrain(integral_pitch, -i_limit,
+//                 i_limit); // 对积分项限幅，防止持续饱和。
+//   derivative_pitch = (error_pitch - error_pitch_prev) / dt;
+//   pitch_PID =
+//       .01 *
+//       (Kff_pitch_rate * pitch_des + Kp_pitch_rate * error_pitch +
+//        Kd_pitch_rate *
+//            derivative_pitch); // 按控制器约定缩放输出量。
 
-  // 偏航通道使用 Z 轴角速度反馈。
-  error_yaw = yaw_des * 3.0 - GyroZ;
-  integral_yaw = integral_yaw_prev + error_yaw * dt;
-  if (channel_1_pwm <
-      1060) { // 通道 1 低于阈值时清零积分项。
-    integral_yaw = 0;
-  }
-  integral_yaw =
-      constrain(integral_yaw, -i_limit,
-                i_limit); // 对积分项限幅，防止持续饱和。
-  derivative_yaw = (error_yaw - error_yaw_prev) / dt;
-  yaw_PID =
-      .01 *
-      (Kff_yaw_rate * yaw_des + Kp_yaw * error_yaw + Ki_yaw * integral_yaw +
-       Kd_yaw * derivative_yaw); // 按控制器约定缩放输出量。
+//   // 偏航通道使用 Z 轴角速度反馈。
+//   error_yaw = yaw_des * 3.0 - GyroZ;
+//   integral_yaw = integral_yaw_prev + error_yaw * dt;
+//   if (channel_1_pwm <
+//       1060) { // 通道 1 低于阈值时清零积分项。
+//     integral_yaw = 0;
+//   }
+//   integral_yaw =
+//       constrain(integral_yaw, -i_limit,
+//                 i_limit); // 对积分项限幅，防止持续饱和。
+//   derivative_yaw = (error_yaw - error_yaw_prev) / dt;
+//   yaw_PID =
+//       .01 *
+//       (Kff_yaw_rate * yaw_des + Kp_yaw * error_yaw + Ki_yaw * integral_yaw +
+//        Kd_yaw * derivative_yaw); // 按控制器约定缩放输出量。
 
-  // 保存滚转状态，供下一周期计算。
-  error_roll_prev = error_roll;
-  integral_roll_prev = integral_roll;
-  // GyroX_prev = GyroX;//这行有什么用啊 似乎没用 而且不会干扰getimudata吗
-  // 保存俯仰状态，供下一周期计算。
-  error_pitch_prev = error_pitch;
-  integral_pitch_prev = integral_pitch;
-  // GyroY_prev = GyroY;//这行有什么用啊 似乎没用 而且不会干扰getimudata吗
-  // 保存偏航状态，供下一周期计算。
-  error_yaw_prev = error_yaw;
-  integral_yaw_prev = integral_yaw;
-}
+//   // 保存滚转状态，供下一周期计算。
+//   error_roll_prev = error_roll;
+//   integral_roll_prev = integral_roll;
+//   // GyroX_prev = GyroX;//这行有什么用啊 似乎没用 而且不会干扰getimudata吗
+//   // 保存俯仰状态，供下一周期计算。
+//   error_pitch_prev = error_pitch;
+//   integral_pitch_prev = integral_pitch;
+//   // GyroY_prev = GyroY;//这行有什么用啊 似乎没用 而且不会干扰getimudata吗
+//   // 保存偏航状态，供下一周期计算。
+//   error_yaw_prev = error_yaw;
+//   integral_yaw_prev = integral_yaw;
+// }
 
 // 使用俯仰角速度、角加速度和升降舵舵效计算 INDI 升降舵指令。
 // 返回值为经限幅后的 PWM 微秒数；函数维护独立滤波与舵机估计状态。
@@ -1637,14 +1666,14 @@ int PITCH_INDI_control() {
     indi_pitch_dq_used_log = dq;
     indi_pitch_delta_e_cmd_deg_log = 0.0f;
     indi_pitch_delta_e_est_deg_log = eleprev;
-    indi_pitch_pwm_cmd_log = 1520.0f + pwm_channel3_trim;
-    return constrain((int)(1520 + pwm_channel3_trim), (int)indi_pitch_pwm_min,
+    indi_pitch_pwm_cmd_log = PWM_CENTER_US + pwm_channel3_trim;
+    return constrain((int)(PWM_CENTER_US + pwm_channel3_trim), (int)indi_pitch_pwm_min,
                      (int)indi_pitch_pwm_max);
   }
 
   // 4. 计算 trim 对应的舵偏角。
   // 后面所有舵机状态初始化都以这个配平点为基准，而不是默认 0 度舵偏。
-  const float pwm_trim_center = 1520.0f + pwm_channel3_trim;
+  const float pwm_trim_center = PWM_CENTER_US + pwm_channel3_trim;
   const float delta_e_trim_deg =
       indi_pitch_pwm_to_deg_k * pwm_trim_center + indi_pitch_pwm_to_deg_b;
 
@@ -1703,7 +1732,7 @@ int PITCH_INDI_control() {
   // 7. 由速率误差生成期望角加速度 dq_des。
   // 这一步是 INDI 的外层：先问“我希望产生多大的俯仰角加速度”。
   float dq_des_deg_s2 = indi_pitch_q_gain * (q_des_deg_s - GyroY_filt);
-  // Serial.println(dq_des_deg_s2);
+  // USBSerial.println(dq_des_deg_s2);
   //  8. INDI 增量控制律。
   //  舵效 indi_pitch_effectiveness 的物理意义是：
   //    dq / delta_e
@@ -1794,70 +1823,6 @@ int PITCH_INDI_control() {
   return (int)(pwm_cmd + 0.5f);
 }
 
-// 将各机归一化舵量换算为以 1520 μs 为中位的 PWM，并施加行程限幅。
-void scaleCommands() {
-  // 将混控后的归一化舵量换算为 PWM，舵机中位为 1520 μs。
-  // 对输出做行程限幅，避免超过执行器允许范围。
-  Aail1_PWM = 1520 + 1000 * (Aail1_scaled);
-  Aail2_PWM = 1520 + 1000 * (Aail2_scaled);
-  Aele_PWM = 1520 + 1000 * (Aele_scaled);
-  Athro_PWM = 1100 + 1000 * (Athro_scaled);
-  Arudd_PWM = 1520 + 1000 * (Arudd_scaled);
-
-  Bail1_PWM = 1520 + 1000 * (Bail1_scaled);
-  Bail2_PWM = 1520 + 1000 * (Bail2_scaled);
-  Bthro_PWM = 1100 + 1000 * (Bthro_scaled);
-  Brudd_PWM = 1520 + 1000 * (Brudd_scaled);
-  B_ele_command_PWM_Manual = 1520 + 1000 * (Aele_scaled) +
-                             0.5 * 1000 * (Bail1_scaled + Bail2_scaled) / 2;
-
-  Cail1_PWM = 1520 + 1000 * (Cail1_scaled);
-  Cail2_PWM = 1520 + 1000 * (Cail2_scaled);
-  Cthro_PWM = 1100 + 1000 * (Cthro_scaled);
-  Crudd_PWM = 1520 + 1000 * (Crudd_scaled);
-  C_ele_command_PWM_Manual = 1520 + 1000 * (Aele_scaled) +
-                             0.5 * 1000 * (Cail1_scaled + Cail2_scaled) / 2;
-
-  Dail1_PWM = 1520 + 1000 * (Dail1_scaled);
-  Dail2_PWM = 1520 + 1000 * (Dail2_scaled);
-  Dthro_PWM = 1100 + 1000 * (Dthro_scaled);
-  Drudd_PWM = 1520 + 1000 * (Drudd_scaled);
-  D_ele_command_PWM_Manual = 1520 + 1000 * (Aele_scaled) +
-                             0.5 * 1000 * (Dail1_scaled + Dail2_scaled) / 2;
-
-  Eail1_PWM = 1520 + 1000 * (Eail1_scaled);
-  Eail2_PWM = 1520 + 1000 * (Eail2_scaled);
-  Ethro_PWM = 1100 + 1000 * (Ethro_scaled);
-  Erudd_PWM = 1520 + 1000 * (Erudd_scaled);
-  E_ele_command_PWM_Manual = 1520 + 1000 * (Aele_scaled) +
-                             0.5 * 1000 * (Eail1_scaled + Eail2_scaled) / 2;
-
-  Fail1_PWM = 1520 + 1000 * (Fail1_scaled);
-  Fail2_PWM = 1520 + 1000 * (Fail2_scaled);
-  Fthro_PWM = 1100 + 1000 * (Fthro_scaled);
-  Frudd_PWM = 1520 + 1000 * (Frudd_scaled);
-  F_ele_command_PWM_Manual = 1520 + 1000 * (Aele_scaled) +
-                             0.5 * 1000 * (Fail1_scaled + Fail2_scaled) / 2;
-
-  Gail1_PWM = 1520 + 1000 * (Gail1_scaled);
-  Gail2_PWM = 1520 + 1000 * (Gail2_scaled);
-  Gthro_PWM = 1100 + 1000 * (Gthro_scaled);
-  Grudd_PWM = 1520 + 1000 * (Grudd_scaled);
-  G_ele_command_PWM_Manual = 1520 + 1000 * (Aele_scaled) +
-                             0.5 * 1000 * (Gail1_scaled + Gail2_scaled) / 2;
-
-  s6_command_PWM = s6_command_scaled * 180;
-  s7_command_PWM = s7_command_scaled * 180;
-  // 限制 PWM 指令在舵机允许行程内。
-  Aail1_PWM = constrain(Aail1_PWM, 1100, 1920);
-  Aail2_PWM = constrain(Aail2_PWM, 1100, 1920);
-  Aele_PWM = constrain(Aele_PWM, 1100, 1920); // 贵的飞机限幅
-  Athro_PWM = constrain(Athro_PWM, 1100, 1920);
-  Arudd_PWM = constrain(Arudd_PWM, 1100, 1920);
-  s6_command_PWM = constrain(s6_command_PWM, 0, 180);
-  s7_command_PWM = constrain(s7_command_PWM, 0, 180);
-}
-
 // 按接收机类型读取各遥控通道并进行低通；更新的值供下一控制周期使用。
 void getCommands() {
   // 读取当前接收机通道；PWM/PPM 由中断更新，SBUS 由库解析。
@@ -1888,7 +1853,7 @@ void getCommands() {
 
 #elif defined USE_DSM_RX
   if (DSM.timedOut(micros())) {
-    // Serial.println("*** DSM RX TIMED OUT ***");
+    // USBSerial.println("*** DSM RX TIMED OUT ***");
   } else if (DSM.gotNewFrame()) {
     uint16_t values[num_DSM_channels];
     DSM.getChannelValues(values, num_DSM_channels);
@@ -2048,7 +2013,7 @@ void controlFlapMotion() {
   error_Phieg = Phieg_des - Phieg_Mea;
   Phieg_des_ol = Kp_Flap * error_Phieg;
 
-  // Serial.println(Phibd_Mea);
+  // USBSerial.println(Phibd_Mea);
 
   // 对外环指令限幅并低通，抑制相邻机体运动振荡。
   float Kl = 30.0;
@@ -2068,7 +2033,7 @@ void controlFlapMotion() {
   // 内环 PI
   // Phiab
   float coeffconfiguration =
-      1.0 + constrain((channel_7_pwm - 1520) / 500.0, -1, 1);
+      1.0 + constrain((channel_7_pwm - PWM_CENTER_US) / 500.0, -1, 1);
   error_Phiab_RATE = Phiab_des_ol - Pab;
   integral_Phiab_RATE_il = integral_Phiab_RATE_prev_il + error_Phiab_RATE * dt;
   if (channel_1_pwm <

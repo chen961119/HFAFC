@@ -8,40 +8,50 @@
 #include "flight_clock.h"
 #include "human_interface.h"
 #include "interaircraft_comm.h"
-#include "math_utils.h"
-#include "radioComm.h"
+#include "logger.h"
+#include "parameter_service.h"
+#include "radio_comm.h"
 #include "sensor_processing.h"
+#include "telemetry.h"
 #include <Arduino.h>
 
 // 按通信、人机界面、传感器、执行器和控制器的依赖顺序完成上电初始化。
 void setup() {
-  // 先建立串口链路，再初始化传感器、执行器和控制器。
+  
+  // 建立串口链路，再初始化传感器、执行器和控制器。
   beginHumanInterfaceLinks();
+  // beginTelemetryLink();
   beginParentLink();
   beginStrainSensorLink();
   beginChildLinks();
   beginExternalImuLink();
+
   delay(20);
+
   initializeHumanInterface();
+  initializeLogger();
+  displayfilenum();
+  initializeParameterService(loggerSdReady());
   initBAROMETER();
   loadRotateSensorOffset();
   loadImuCalibration();
   prepareActuatorPower();
   displayAircraftIdentity();
   attachActuators();
+
   delay(5);
   radioSetup();
   initializeRadioFailsafeChannels();
-#if defined INTIMU
   IMUinit();
-#endif
+
   delay(5);
   commandSafeActuatorPositions();
+  
   delay(5);
-  initializeControlAllocation();
+  // initializeControlAllocation();
   calibrateAirspeedSensor();
   initializeInitialAttitude();
-  currentMode = MANUAL_MODE;
+  initializeInitialControlMode();
   initializeControlFilters();
 }
 
@@ -51,14 +61,10 @@ void loop() {
   updateFlightClock();
 
   armedStatus();
-#if defined INTIMU
   getBMI088data();
-  Madgwick(dt);
-#endif
+  Madgwick();
   getAngularACC();
-#if defined EXTIMU
   getIMUdata_EXT();
-#endif
   increase_Clp();
   getairspeed();
   getDesState();
@@ -67,18 +73,21 @@ void loop() {
   Strain_read_all();
   getairdata();
   receiveAdjacentAircraftStates();
+  // telemetry(); //数传。 传输等效姿态角，相对转角，相对扭转角 10hz
 
   runSelectedControlMode();
-  getpinvBplusmini();
+  // getpinvBplusmini();
   controlMixer();
+  
   scaleCommands();
   prepareActuatorCommands();
   applyAndTransmitActuatorCommands();
 
   loggerTEAM();
-  // 接收值供下一周期控制使用，避免周期中途改变控制输入。
-  getCommands();
+ 
+  getCommands(); // 接收值供下一周期控制使用，避免周期中途改变控制输入。
   failSafe();
-  // 目标频率 500 Hz；若本周期已超时，loopRate 不会额外等待。
-  loopRate(500, current_time);
+  pollParameterService();
+  
+  loopRate(500);// 目标频率 500 Hz；若本周期已超时，loopRate 不会额外等待。
 }

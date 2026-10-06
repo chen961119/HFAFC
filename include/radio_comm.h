@@ -5,7 +5,7 @@
 #include <SBUS.h>
 #include <DSMRX.h>
 
-// 接收机硬件实例由 radioComm.cpp 持有；接收类型由 flight_config.h 统一选择。
+// 接收机硬件实例由 radio_comm.cpp 持有；接收类型由 flight_config.h 统一选择。
 #if defined USE_SBUS_RX
 extern SBUS sbus;
 extern uint16_t sbusChannels[16];

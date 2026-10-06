@@ -1,3 +1,4 @@
+#include "serial_ports.h"
 #include "control_allocation.h"
 #include "control_state.h"
 #include "sensor_processing.h"
@@ -473,31 +474,31 @@ void getpinvBplusmini() {
 // 按行列打印 Eigen 矩阵，保留四位小数，供控制分配调试。
 void printFullMatrix(const MatrixXf& m) {
     
-    Serial.println("==========================================");
+    USBSerial.println("==========================================");
     
     for (int i = 0; i < m.rows(); i++) {
         // 行号标签
-        Serial.print("[");
-        if (i < 10) Serial.print(" ");
-        Serial.print(i);
-        Serial.print("] ");
+        USBSerial.print("[");
+        if (i < 10) USBSerial.print(" ");
+        USBSerial.print(i);
+        USBSerial.print("] ");
         
         // 打印每行元素
         for (int j = 0; j < m.cols(); j++) {
-            Serial.print(m(i,j), 4); // 打印4位小数
-            Serial.print("\t");
+            USBSerial.print(m(i,j), 4); // 打印4位小数
+            USBSerial.print("\t");
             
             // 每5列增加分隔线
-            if ((j+1) % 5 == 0) Serial.print("| ");
+            if ((j+1) % 5 == 0) USBSerial.print("| ");
         }
-        Serial.println();
+        USBSerial.println();
         
         // 每5行增加分隔线
         if ((i+1) % 5 == 0) {
-            Serial.println("------------------------------------------");
+            USBSerial.println("------------------------------------------");
         }
     }
-    Serial.println("==========================================");
+    USBSerial.println("==========================================");
 }
 
 

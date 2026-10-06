@@ -32,3 +32,9 @@ Desktop.ini
 # Runtime logs and on-device log exports
 *.log
 datalog*.txt
+
+# Desktop parameter console environment and Python caches
+tools/parameter_console/.venv/
+tools/parameter_console/build/
+tools/parameter_console/dist/
+__pycache__/

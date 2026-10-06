@@ -50,16 +50,16 @@ float invSqrt(float x) {
 }
 
 // 将滚转、俯仰、偏航欧拉角转换为 Eigen 四元数；输入角单位为弧度。
-Quaternionf eulertoqua(float roll, float pitch, float yaw) {
+Quaternionf eulerToQuaternion(float phi, float theta, float psi) {
   Quaternionf q;
 
   // 计算半角
-  float cy = cosf(yaw * 0.5f);
-  float sy = sinf(yaw * 0.5f);
-  float cp = cosf(pitch * 0.5f);
-  float sp = sinf(pitch * 0.5f);
-  float cr = cosf(roll * 0.5f);
-  float sr = sinf(roll * 0.5f);
+  float cy = cosf(psi * 0.5f);
+  float sy = sinf(psi * 0.5f);
+  float cp = cosf(theta * 0.5f);
+  float sp = sinf(theta * 0.5f);
+  float cr = cosf(phi * 0.5f);
+  float sr = sinf(phi * 0.5f);
 
   // 计算四元数分量
   q.w() = cr * cp * cy + sr * sp * sy;
@@ -95,7 +95,7 @@ QuaternionDifferenceEuler quatDiffToEuler(const Eigen::Quaternionf &q1,
   result.rollDifferenceDeg = -result.otherRollDeg - rollImuDeg;
 
   Eigen::Quaternionf q_rot =
-      eulertoqua(0, 0, (yawImuDeg - result.otherYawDeg) / 57.295);
+      eulerToQuaternion(0, 0, (yawImuDeg - result.otherYawDeg) / 57.295);
   Eigen::Quaternionf q2_revised = q_rot * q2;
   Eigen::Quaternionf q_diff = q2_revised * q1.conjugate();
   q_diff = q1.conjugate() * q_diff * q1; // 投影到q1上。
@@ -111,13 +111,3 @@ QuaternionDifferenceEuler quatDiffToEuler(const Eigen::Quaternionf &q1,
   return result;
 }
 
-// 从 loopStartTime 起忙等到目标周期时长；freq 单位为 Hz，时间戳单位为 μs。
-// 若处理已超时则立即返回，不会补偿遗漏的周期。
-void loopRate(int freq, unsigned long loopStartTime) {
-  // micros() 的无符号差值可处理计数器回绕；忙等期间 CPU 不执行其他循环任务。
-  const float intervalMicros = 1000000.0f / freq;
-  unsigned long checker = micros();
-  while (intervalMicros > (checker - loopStartTime)) {
-    checker = micros();
-  }
-}

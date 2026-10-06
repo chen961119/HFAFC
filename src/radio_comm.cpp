@@ -1,9 +1,10 @@
+#include "serial_ports.h"
 // 遥控接收模块：支持编译配置选定的 PPM、PWM、SBUS 或 DSM 接收机。
 // 原始实现来自 Nicholas Rehm 的 dRehmFlight 项目，后续按本项目硬件接线调整。
 #include <Arduino.h>
-#include "radioComm.h"
+#include "radio_comm.h"
 #include <SBUS.h>  // SBUS 接收机驱动。
-// 以下引脚用于 PWM 接收机；SBUS 实际使用 Serial2，DSM 使用 Serial3。
+// 以下引脚用于 PWM 接收机；SBUS 实际使用 SbusSerial，DSM 使用 DsmSerial。
 const int ch1Pin = 15; // 通道 1：滚转
 const int ch2Pin = 16; // 通道 2：俯仰
 const int ch3Pin = 17; // 通道 3：油门
@@ -19,7 +20,7 @@ static unsigned long time_ms = 0;
 
 
 #if defined USE_SBUS_RX
-SBUS sbus(Serial2);
+SBUS sbus(SbusSerial);
 uint16_t sbusChannels[16];
 bool sbusFailSafe;
 bool sbusLostFrame;
@@ -63,7 +64,7 @@ void radioSetup() {
 
   // DSM 接收机。
   #elif defined USE_DSM_RX
-    Serial3.begin(115000);
+    DsmSerial.begin(115000);
   #else
     // 未配置接收机类型时不执行初始化。
   #endif
@@ -101,8 +102,8 @@ unsigned long getRadioPWM(int ch_num) {
 void serialEvent3(void)
 {
   #if defined USE_DSM_RX
-    while (Serial3.available()) {
-        DSM.handleSerialEvent(Serial3.read(), micros());
+    while (DsmSerial.available()) {
+        DSM.handleSerialEvent(DsmSerial.read(), micros());
     }
   #endif
 }

@@ -54,7 +54,10 @@
 | `platformio.ini` | Teensy 4.1 构建、上传和依赖配置 |
 | `src/main.cpp` | 入口和绝大多数业务逻辑：初始化、500 Hz 主循环、传感器、姿态、控制、执行器、通信、日志 |
 | `src/control_allocation.cpp` | 复合体质量矩阵、舵效矩阵、广义力与 Eigen 伪逆控制分配 |
-| `src/radioComm.cpp` | SBUS/PWM/PPM/DSM 接收机初始化和脉宽采集 ISR |
+| `src/telemetry.cpp` | 数传串口初始化和构型/姿态数据帧发送 |
+| `src/logger.cpp` | SD 初始化、日志编号、CSV 表头及单机/编队日志写入 |
+| `src/human_interface.cpp` | OLED、按键及指示灯 |
+| `src/radio_comm.cpp` | SBUS/PWM/PPM/DSM 接收机初始化和脉宽采集 ISR |
 | `lib/` | 随仓库保存的传感器、接收机和显示驱动库 |
 | `include/` | PlatformIO 预留公共头文件目录，当前无项目头文件 |
 | `test/` | PlatformIO 预留测试目录，当前无自动化测试 |
@@ -199,9 +202,9 @@
 | 改飞行模式和遥控映射 | `getDesState()`、`getCommands()` |
 | 调姿态 PID | `controlANGLE2()` / `controlRATE()` 参数区 |
 | 调俯仰 INDI | `PITCH_INDI_control()` 及 INDI 滤波器初始化 |
-| 改混控/舵面限幅 | `controlMixer()`、`scaleCommands()` 和 `loop()` 的各机 PWM 修正段 |
+| 改混控/舵面限幅 | `control_modes.cpp` 的 `controlMixer()` 与 `actuator_output.cpp` 的 `scaleCommands()` / `prepareActuatorCommands()` |
 | 改复合体动力学/控制分配 | `src/control_allocation.cpp` 和 `main.cpp` 的质量、惯量、几何参数 |
 | 改主从协议 | `sendAllData*()`、`receiveCommandData()`、`sendGYROxANGLE()`、`getGYROxANGLE*()` |
-| 改日志字段 | `setup()` CSV 表头与 `loggerTEAM()` / `loggerSINGLE()` |
+| 改日志字段 | `src/logger.cpp` 中的 `initializeLogger()` CSV 表头与 `loggerTEAM()` / `loggerSINGLE()` |
 
 建议后续优先将身份宏拆成多个 PlatformIO 环境，把线协议结构与常量提取到公共头文件，再为协议和控制分配建立宿主机测试。

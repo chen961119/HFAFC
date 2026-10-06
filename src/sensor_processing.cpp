@@ -1,3 +1,4 @@
+#include "serial_ports.h"
 #include "sensor_processing.h"
 #include "flight_config.h"
 #include "flight_clock.h"
@@ -96,10 +97,10 @@ MPU6050 mpu6050;
 
 
 
-// 以 115200 波特率启动外置 IMU 所用的 Serial1。
-void beginExternalImuLink() { Serial1.begin(115200); }
-// 以 115200 波特率启动应变传感器所用的 Serial7。
-void beginStrainSensorLink() { Serial7.begin(115200); }
+// 以 115200 波特率启动外置 IMU 所用的 ExternalImuSerial。
+void beginExternalImuLink() { ExternalImuSerial.begin(115200); }
+// 以 115200 波特率启动应变传感器所用的 StrainSensorSerial。
+void beginStrainSensorLink() { StrainSensorSerial.begin(115200); }
 
 // 在启动阶段反复读取 BMI088 并迭代姿态滤波器，使姿态估计预热。
 // 每轮以 2000 Hz 为目标节拍，循环次数由函数内常量决定。
@@ -108,8 +109,8 @@ void calibrateAttitude() {
   for (int i = 0; i <= 10000; i++) {
     updateFlightClock();
     getBMI088data();
-    Madgwick(dt);
-    loopRate(2000, current_time);
+    Madgwick();
+    loopRate(2000);
   }
 }
 
@@ -148,14 +149,15 @@ const float inv_acc_lsb = 1.0f / 5460.0f;
 const float inv_gyr_lsb = 1.0f / 16.384f;
 }
 
-// 解析 Serial1 的 11 字节外置 IMU 帧；校验通过后更新姿态角、角速度或加速度。
+// 解析 ExternalImuSerial 的 11 字节外置 IMU 帧；校验通过后更新姿态角、角速度或加速度。
 // 输出角度为度、角速度为 °/s、加速度为 m/s²。
 void getIMUdata_EXT() {
+#if defined EXTIMU
   // 串口帧长 11 字节：0x55 帧头、数据类型、8 字节数据及累加校验字节。
   static uint8_t buf[11], pos = 0;
 
-  while (Serial1.available()) {
-    uint8_t b = Serial1.read();
+  while (ExternalImuSerial.available()) {
+    uint8_t b = ExternalImuSerial.read();
 
     // 检查数据头
     if (pos == 0 && b != 0x55)
@@ -182,9 +184,9 @@ void getIMUdata_EXT() {
           float q1 = ((int16_t)(buf[5] << 8) | buf[4]) / 32768.0f;
           float q2 = ((int16_t)(buf[7] << 8) | buf[6]) / 32768.0f;
           float q3 = ((int16_t)(buf[9] << 8) | buf[8]) / 32768.0f;
-          // Serial.print("Q:"); Serial.print(q0,3); Serial.print(",");
-          // Serial.print(q1,3); Serial.print(","); Serial.print(q2,3);
-          // Serial.print(","); Serial.println(q3,3);
+          // USBSerial.print("Q:"); USBSerial.print(q0,3); USBSerial.print(",");
+          // USBSerial.print(q1,3); USBSerial.print(","); USBSerial.print(q2,3);
+          // USBSerial.print(","); USBSerial.println(q3,3);
           roll_IMU_EXT = -atan2(q0 * q1 + q2 * q3, 0.5f - q1 * q1 - q2 * q2) *
                          57.29577951; // 弧度转角度。
           pitch_IMU_EXT = asin(constrain(-2.0f * (q1 * q3 - q0 * q2), -0.999999,
@@ -192,16 +194,16 @@ void getIMUdata_EXT() {
                           57.29577951; // 弧度转角度。
           yaw_IMU_EXT = atan2(q1 * q2 + q0 * q3, 0.5f - q2 * q2 - q3 * q3) *
                         57.29577951; // 弧度转角度。
-          // Serial.print("R:");
-          // Serial.println(roll_IMU_EXT);
+          // USBSerial.print("R:");
+          // USBSerial.println(roll_IMU_EXT);
         } else if (buf[1] == 0x52) { // 角速度数据
           Gyro_X_EXT =
               -1 * (((int16_t)(buf[3] << 8) | buf[2]) / 32768.0f * 2000.0f);
           Gyro_Y_EXT = ((int16_t)(buf[5] << 8) | buf[4]) / 32768.0f * 2000.0f;
           Gyro_Z_EXT = ((int16_t)(buf[7] << 8) | buf[6]) / 32768.0f * 2000.0f;
-          // Serial.print("X:");
-          // Serial.println(Gyro_X_EXT);
-          // Serial.print(wy,1); Serial.print(","); Serial.println(wz,1);
+          // USBSerial.print("X:");
+          // USBSerial.println(Gyro_X_EXT);
+          // USBSerial.print(wy,1); USBSerial.print(","); USBSerial.println(wz,1);
         }
 
         else if (buf[1] == 0x51) { // 加速度数据
@@ -211,14 +213,16 @@ void getIMUdata_EXT() {
               ((int16_t)(buf[5] << 8) | buf[4]) / 32768.0f * 16.0f * 9.8f;
           Acc_Z_EXT =
               ((int16_t)(buf[7] << 8) | buf[6]) / 32768.0f * 16.0f * 9.8f;
-          // Serial.print("A:");
-          // Serial.println(Acc_X_EXT);
-          // Serial.print("A:"); Serial.print(ax,1); Serial.print(",");
-          // Serial.print(ay,1); Serial.print(","); Serial.println(az,1);
+          // USBSerial.print("A:");
+          // USBSerial.println(Acc_X_EXT);
+          // USBSerial.print("A:"); USBSerial.print(ax,1); USBSerial.print(",");
+          // USBSerial.print(ay,1); USBSerial.print(","); USBSerial.println(az,1);
         }
       }
     }
   }
+
+#endif
 }
 
 // 应变传感器的五通道数据按设备协议逐通道转换。
@@ -264,7 +268,7 @@ uint16_t modbusCRC(uint8_t *buf, int len) {
 }
 
 // 发送功能码 0x03 的寄存器读取请求。
-// 构造应变传感器的 8 字节 Modbus 读取请求并写入 Serial7。
+// 构造应变传感器的 8 字节 Modbus 读取请求并写入 StrainSensorSerial。
 // addr 为设备地址，fcode 为功能码，reg 为起始寄存器，num 为寄存器数量。
 void sendStrainCommand(uint8_t addr, uint16_t fcode, uint16_t reg,
                        uint16_t num) {
@@ -283,8 +287,8 @@ void sendStrainCommand(uint8_t addr, uint16_t fcode, uint16_t reg,
   frame[6] = crc & 0xFF; // CRC低位
   frame[7] = crc >> 8;   // CRC高位
 
-  // Serial.write(frame, 8);
-  Serial7.write(frame, 8);
+  // USBSerial.write(frame, 8);
+  StrainSensorSerial.write(frame, 8);
 }
 
 // 按设定频率请求 10 个寄存器，并在收到足够长的响应时更新五路应变值。
@@ -301,9 +305,9 @@ void Strain_read_all() {
   uint8_t buf[32];
   int len = 0;
 
-  while (Serial7.available()) {
-    // Serial.println("available ");
-    buf[len++] = Serial7.read();
+  while (StrainSensorSerial.available()) {
+    // USBSerial.println("available ");
+    buf[len++] = StrainSensorSerial.read();
   }
 
   // 解析
@@ -370,6 +374,7 @@ void getICM42688data() {
 // 经 SPI 读取 BMI088，加速度与角速度按安装方向旋转 90° 并扣除 EEPROM 零偏。
 // 结果写入沿用的 6050 变量，单位分别为 g 和 °/s。
 void getBMI088data() {
+#if defined INTIMU
   // 加速度计 SPI 读取需要一个哑字节；陀螺仪读取不需要。
 
   uint8_t buf[6];
@@ -428,46 +433,48 @@ void getBMI088data() {
   GyroX_prev_6050 = GyroX_6050; GyroY_prev_6050 = GyroY_6050; GyroZ_prev_6050 =
   GyroZ_6050;
   */
+
+#endif
 }
 
 // 以十六进制打印原始字节和三轴有符号值；用于核对 BMI088 SPI 读数。
 void printBMI088Raw(const char *tag, const uint8_t *buf, int len, int16_t x,
                     int16_t y, int16_t z) {
-  Serial.print(tag);
-  Serial.print(F(" raw:"));
+  USBSerial.print(tag);
+  USBSerial.print(F(" raw:"));
   for (int i = 0; i < len; i++) {
     if (buf[i] < 0x10)
-      Serial.print('0');
-    Serial.print(buf[i], HEX);
+      USBSerial.print('0');
+    USBSerial.print(buf[i], HEX);
     if (i < len - 1)
-      Serial.print(' ');
+      USBSerial.print(' ');
   }
-  Serial.print(F(" val:"));
-  Serial.print(x);
-  Serial.print(F(","));
-  Serial.print(y);
-  Serial.print(F(","));
-  Serial.println(z);
+  USBSerial.print(F(" val:"));
+  USBSerial.print(x);
+  USBSerial.print(F(","));
+  USBSerial.print(y);
+  USBSerial.print(F(","));
+  USBSerial.println(z);
 }
 
-// 从 Serial8 查找 0xAA 0x55 帧头、校验二进制数据包并更新 airdata。
+// 从 TelemetrySerial 查找 0xAA 0x55 帧头、校验二进制数据包并更新 airdata。
 // 不合法的真空速值置零；不完整或校验失败的帧不更新共享状态。
 void getairdata() {
-  while (Serial8.available() >= sizeof(FC_Binary_Packet)) {
+  while (TelemetrySerial.available() >= sizeof(FC_Binary_Packet)) {
 
     // 检查第一个帧头
-    if (Serial8.read() == 0xAA) {
+    if (TelemetrySerial.read() == 0xAA) {
       // 检查第二个帧头
-      if (Serial8.peek() == 0x55) {
+      if (TelemetrySerial.peek() == 0x55) {
         FC_Binary_Packet candidate = {};
         uint8_t *ptr = reinterpret_cast<uint8_t *>(&candidate);
 
-        Serial8.read(); // 跳过第二个帧头
+        TelemetrySerial.read(); // 跳过第二个帧头
         ptr[0] = 0xAA;
         ptr[1] = 0x55;
 
         const size_t payloadLen = sizeof(FC_Binary_Packet) - 2;
-        if (Serial8.readBytes(&ptr[2], payloadLen) != payloadLen) {
+        if (TelemetrySerial.readBytes(&ptr[2], payloadLen) != payloadLen) {
           continue;
         }
 
@@ -482,7 +489,7 @@ void getairdata() {
             candidate.tas = 0.0f;
           }
           airdata = candidate;
-          Serial.println(airdata.aoa);
+          USBSerial.println(airdata.aoa);
         }
       }
     }
@@ -577,6 +584,7 @@ void calibrateAirspeedSensor() { airspeedSensor.calib(); }
 
 // 按编译配置初始化内置 IMU 的总线、电源状态、量程及采样参数。
 void IMUinit() {
+#if defined INTIMU
 // 根据编译配置初始化内置 IMU；BMI088 通过 SPI，MPU9250 通过自身驱动初始化。
 #if defined USE_MPU6050_I2C
   Wire.begin();
@@ -612,12 +620,12 @@ void IMUinit() {
   writeRegSPI(CS_GYR, 0x0F, 0x00); // ±2000 dps
   writeRegSPI(CS_GYR, 0x10, 0x02); // ODR 1000Hz, BW 116Hz
 
-  Serial.println("BMI088 SPI Initialized.");
+  USBSerial.println("BMI088 SPI Initialized.");
 
   /*
     if (mpu6050.testConnection() == false) {
-      Serial.println("MPU6050 initialization unsuccessful");
-      Serial.println("Check MPU6050 wiring or try cycling power");
+      USBSerial.println("MPU6050 initialization unsuccessful");
+      USBSerial.println("Check MPU6050 wiring or try cycling power");
       while(1) {}
     }
     */
@@ -631,10 +639,10 @@ void IMUinit() {
   int status = mpu9250.begin();
 
   if (status < 0) {
-    Serial.println("MPU9250 initialization unsuccessful");
-    Serial.println("Check MPU9250 wiring or try cycling power");
-    Serial.print("Status: ");
-    Serial.println(status);
+    USBSerial.println("MPU9250 initialization unsuccessful");
+    USBSerial.println("Check MPU9250 wiring or try cycling power");
+    USBSerial.print("Status: ");
+    USBSerial.println(status);
     while (1) {
     }
   }
@@ -647,6 +655,8 @@ void IMUinit() {
   mpu9250.setMagCalZ(MagErrorZ_9250, MagScaleZ_9250);
   mpu9250.setSrd(
       0); // 陀螺仪和加速度计约 1 kHz，磁力计约 100 Hz。
+#endif
+
 #endif
 }
 
@@ -758,7 +768,7 @@ void calculate_IMU_error() {
   int c = 0;
   uint8_t buf[6];
 
-  Serial.println(
+  USBSerial.println(
       "BMI088 SPI Calibrating (Rotated 90)... Keep vehicle flat and still.");
 
   while (c < 12000) {
@@ -799,7 +809,7 @@ void calculate_IMU_error() {
     sGZ += rgz / 16.384;
 
     if (c % 1000 == 0)
-      Serial.print(".");
+      USBSerial.print(".");
     c++;
     delayMicroseconds(100);
   }
@@ -820,7 +830,7 @@ void calculate_IMU_error() {
     EEPROM.write(addr++, p[i]);
   }
 
-  Serial.println(
+  USBSerial.println(
       "\nBMI088 SPI Rotation Calibration Complete & Saved to EEPROM.");
 }
 
@@ -830,51 +840,51 @@ void calculate_IMU_error() {
 void calibrateMagnetometer() {
 #if defined USE_MPU9250_SPI
   float success;
-  Serial.println("Beginning magnetometer calibration in");
-  Serial.println("3...");
+  USBSerial.println("Beginning magnetometer calibration in");
+  USBSerial.println("3...");
   delay(1000);
-  Serial.println("2...");
+  USBSerial.println("2...");
   delay(1000);
-  Serial.println("1...");
+  USBSerial.println("1...");
   delay(1000);
-  Serial.println("Rotate the IMU about all axes until complete.");
-  Serial.println(" ");
+  USBSerial.println("Rotate the IMU about all axes until complete.");
+  USBSerial.println(" ");
   success = mpu9250.calibrateMag();
   if (success) {
-    Serial.println("Calibration Successful!");
-    Serial.println("Please comment out the calibrateMagnetometer() function "
+    USBSerial.println("Calibration Successful!");
+    USBSerial.println("Please comment out the calibrateMagnetometer() function "
                    "and copy these values into the code:");
-    Serial.print("float MagErrorX_9250 = ");
-    Serial.print(mpu9250.getMagBiasX_uT());
-    Serial.println(";");
-    Serial.print("float MagErrorY_9250 = ");
-    Serial.print(mpu9250.getMagBiasY_uT());
-    Serial.println(";");
-    Serial.print("float MagErrorZ_9250 = ");
-    Serial.print(mpu9250.getMagBiasZ_uT());
-    Serial.println(";");
-    Serial.print("float MagScaleX_9250 = ");
-    Serial.print(mpu9250.getMagScaleFactorX());
-    Serial.println(";");
-    Serial.print("float MagScaleY_9250 = ");
-    Serial.print(mpu9250.getMagScaleFactorY());
-    Serial.println(";");
-    Serial.print("float MagScaleZ_9250 = ");
-    Serial.print(mpu9250.getMagScaleFactorZ());
-    Serial.println(";");
-    Serial.println(" ");
+    USBSerial.print("float MagErrorX_9250 = ");
+    USBSerial.print(mpu9250.getMagBiasX_uT());
+    USBSerial.println(";");
+    USBSerial.print("float MagErrorY_9250 = ");
+    USBSerial.print(mpu9250.getMagBiasY_uT());
+    USBSerial.println(";");
+    USBSerial.print("float MagErrorZ_9250 = ");
+    USBSerial.print(mpu9250.getMagBiasZ_uT());
+    USBSerial.println(";");
+    USBSerial.print("float MagScaleX_9250 = ");
+    USBSerial.print(mpu9250.getMagScaleFactorX());
+    USBSerial.println(";");
+    USBSerial.print("float MagScaleY_9250 = ");
+    USBSerial.print(mpu9250.getMagScaleFactorY());
+    USBSerial.println(";");
+    USBSerial.print("float MagScaleZ_9250 = ");
+    USBSerial.print(mpu9250.getMagScaleFactorZ());
+    USBSerial.println(";");
+    USBSerial.println(" ");
 
-    Serial.println("If you are having trouble with your attitude estimate at a "
+    USBSerial.println("If you are having trouble with your attitude estimate at a "
                    "new flying location, repeat this process as needed.");
   } else {
-    Serial.println(
+    USBSerial.println(
         "Calibration Unsuccessful. Please reset the board and try again.");
   }
 
   while (1)
     ; // 标定结束后停在这里，避免直接进入飞行主循环。
 #endif
-  Serial.println("Error: MPU9250 not selected. Cannot calibrate non-existent "
+  USBSerial.println("Error: MPU9250 not selected. Cannot calibrate non-existent "
                  "magnetometer.");
   while (1)
     ; // 未启用 MPU9250 时阻止继续运行。
@@ -888,7 +898,7 @@ void getairspeed() {
   if (micros() - lastAirspeedRead > 20000) {
     lastAirspeedRead = micros();
     airspeed_A = airspeedSensor.getAirspeed();
-    // Serial.println(airspeed_A);
+    // USBSerial.println(airspeed_A);
   }
 }
 
@@ -904,7 +914,7 @@ void getbarodata() {
   // 计算海拔高度(国际标准大气模型)
   filteredAltitude = bmp.readAltitude(1013.25);
   // 输出调试信息
-  Serial.printf("Temp: %.1fC | Pressure: %.2fPa | Alt: %.2fm\n", temp, pressure,
+  USBSerial.printf("Temp: %.1fC | Pressure: %.2fPa | Alt: %.2fm\n", temp, pressure,
                 filteredAltitude);
 #endif
 }
@@ -917,9 +927,9 @@ void initBAROMETER() {
   BMP280_I2C.begin();
   BMP280_I2C.setClock(400000); // 提升至400kHz
   if (!bmp.begin(0x76)) {      // 尝试默认地址0x76
-    Serial.println("BMP280未找到，尝试0x77...");
+    USBSerial.println("BMP280未找到，尝试0x77...");
     if (!bmp.begin(0x77)) {
-      Serial.println("BMP280初始化失败!");
+      USBSerial.println("BMP280初始化失败!");
       // while(1);
     }
   }
@@ -935,14 +945,14 @@ void initBAROMETER() {
 }
 
 
-// 从 Serial7 解析以换行结束的 Angle 文本，并按机位约定更新相对转角。
+// 从 AngleSensorSerial 解析以换行结束的 Angle 文本，并按机位约定更新相对转角。
 void getRotateSensor1() // 每个飞机都要做的
 {
-  // Serial7 接收以换行结束的 "Angle:" 文本帧；不同机位采用不同角度正方向。
+  // AngleSensorSerial 接收以换行结束的 "Angle:" 文本帧；不同机位采用不同角度正方向。
 
-  while (Serial7.available() > 0) {
-    // Serial.println("sbb");
-    char incomingChar = Serial7.read();
+  while (AngleSensorSerial.available() > 0) {
+    // USBSerial.println("sbb");
+    char incomingChar = AngleSensorSerial.read();
 
     if (incomingChar == '\n') { // 检测到行结束符
       if (serialBuffer.startsWith("Angle:")) {
@@ -950,9 +960,9 @@ void getRotateSensor1() // 每个飞机都要做的
         relativeAngle_raw = angleStr.toFloat();
 
         // 打印到硬件串口（调试）
-        // Serial.print("Received Angle: ");
-        // Serial.print(relativeAngle_raw, 3);
-        // Serial.println("°");
+        // USBSerial.print("Received Angle: ");
+        // USBSerial.print(relativeAngle_raw, 3);
+        // USBSerial.println("°");
       }
       serialBuffer = "";               // 清空缓冲区
     } else if (incomingChar != '\r') { // 忽略 \r
@@ -972,7 +982,7 @@ void getRotateSensor1() // 每个飞机都要做的
 void ResetRotateSensor() {
   relativeAngle_offset = relativeAngle_raw;         // 计算新偏移量
   EEPROM.put(eepromAddress1, relativeAngle_offset); // 存储到 EEPROM
-  Serial.println("Zero Set! Offset: " + String(relativeAngle_offset));
+  USBSerial.println("Zero Set! Offset: " + String(relativeAngle_offset));
 }
 
 
@@ -995,6 +1005,97 @@ void initializeInitialAttitude() {
   // 上电时用首帧加速度估计初始姿态四元数。
 #if defined INTIMU
   getBMI088data();
-  eulerToQuaternion();
+  float phi, theta, psi;
+#if defined USE_MPU6050_I2C
+  phi = atan2(AccY_6050, AccZ_6050); // 滚转角，绕 x 轴。
+  theta = atan2(-AccX_6050, sqrt(AccY_6050 * AccY_6050 +
+                                 AccZ_6050 * AccZ_6050)); // 俯仰角，绕 y 轴。
+  psi = 0;                                                // 无磁力计时偏航角初始化为 0。
+#endif
+
+#if defined USE_MPU9250_SPI
+  phi = atan2(AccY_9250, AccZ_9250); // 滚转角，绕 x 轴。
+  theta = atan2(-AccX_9250, sqrt(AccY_9250 * AccY_9250 +
+                                 AccZ_9250 * AccZ_9250)); // 俯仰角，绕 y 轴。
+  psi = atan2(-MagX_9250, MagY_9250);                     // 偏航角由磁力计初始化。
+#endif
+
+  const Eigen::Quaternionf initialAttitude = eulerToQuaternion(phi, theta, psi);
+  q0 = initialAttitude.w();
+  q1 = initialAttitude.x();
+  q2 = initialAttitude.y();
+  q3 = initialAttitude.z();
 #endif
 }
+
+namespace {
+// 角加速度低通滤波器（三轴）
+static PX4LowPassFilter2p gyroDerivFiltX, gyroDerivFiltY,
+    gyroDerivFiltZ; // getAngularACC() 求 dp/dq/dr 前的角速度滤波
+
+static PX4LowPassFilter2p angularAccFiltX, angularAccFiltY, angularAccFiltZ;
+
+// 前次滤波后陀螺仪值（用于差分）
+float gyroX_filt_prev = 0.0f;
+float gyroY_filt_prev = 0.0f;
+float gyroZ_filt_prev = 0.0f;
+// 前次差分时间（微秒）
+unsigned long prev_time_gyro_deriv = 0;
+
+
+} // namespace
+
+float dp, dq, dr;
+
+// 为角速度差分前后两级滤波器设置 500 Hz 采样参数。
+void initializeAngularAccelerationFilters() {
+  angularAccFiltX.set_cutoff_frequency(500, 100);
+  angularAccFiltY.set_cutoff_frequency(500, 20);
+  angularAccFiltZ.set_cutoff_frequency(500, 100);
+  gyroDerivFiltX.set_cutoff_frequency(500, 100);
+  gyroDerivFiltY.set_cutoff_frequency(500, 40);
+  gyroDerivFiltZ.set_cutoff_frequency(500, 100);
+}
+
+// 由内置陀螺仪角速度计算 dp、dq、dr，单位为 °/s²；异常采样间隔时清零输出。
+void getAngularACC() {
+  // 先平滑角速度再差分，最后滤波并限幅，避免差分放大传感器噪声。
+  unsigned long now = micros();
+
+  float dt_deriv = (now - prev_time_gyro_deriv) * 1.0e-6f;
+  prev_time_gyro_deriv = now;
+
+  if (dt_deriv <= 0.0f || dt_deriv > 0.01f) {
+    // 首次调用或采样中断后重建历史值，跳过本次角加速度计算。
+    gyroX_filt_prev = gyroDerivFiltX.apply(-GyroX_6050);
+    gyroY_filt_prev = gyroDerivFiltY.apply(GyroY_6050);
+    gyroZ_filt_prev = gyroDerivFiltZ.apply(GyroZ_6050);
+    dp = 0.0f;
+    dq = 0.0f;
+    dr = 0.0f;
+    return;
+  }
+
+  float gyroX_now = gyroDerivFiltX.apply(-GyroX_6050);
+  float gyroY_now = gyroDerivFiltY.apply(GyroY_6050);
+  float gyroZ_now = gyroDerivFiltZ.apply(GyroZ_6050);
+
+  float dp_raw = (gyroX_now - gyroX_filt_prev) / dt_deriv;
+  float dq_raw = (gyroY_now - gyroY_filt_prev) / dt_deriv;
+  float dr_raw = (gyroZ_now - gyroZ_filt_prev) / dt_deriv;
+
+  dp = angularAccFiltX.apply(dp_raw);
+  dq = angularAccFiltY.apply(dq_raw);
+  dr = angularAccFiltZ.apply(dr_raw);
+
+  gyroX_filt_prev = gyroX_now;
+  gyroY_filt_prev = gyroY_now;
+  gyroZ_filt_prev = gyroZ_now;
+
+  const float deriv_limit = 3000.0f;
+  dp = constrain(dp, -deriv_limit, deriv_limit);
+  dq = constrain(dq, -deriv_limit, deriv_limit);
+  dr = constrain(dr, -deriv_limit, deriv_limit);
+}
+
+

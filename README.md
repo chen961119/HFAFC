@@ -31,7 +31,70 @@
 - 上传协议：`teensy-gui`
 - 串口监视器：921600 baud
 
-项目依赖由 `platformio.ini` 和 `lib/` 管理，不需要 Python `requirements.txt`。
+固件依赖由 `platformio.ini` 和 `lib/` 管理；电脑参数软件的 Python 依赖单独位于 `tools/parameter_console/requirements.txt`。
+
+## USB 参数配置软件
+
+电脑端软件位于 `tools/parameter_console/`，提供 27 项浮点控制参数和 1 项整数调试开关读取/修改、SD 自动保存、列排序及支持十六进制显示的串口助手。双击 `tools/parameter_console/dist/HFAFCParameterConsole.exe` 可启动；源码启动、协议、SD 恢复见 [参数软件使用说明](tools/parameter_console/README.md)。飞控开机在 SD 初始化后自动加载参数，修改成功后下次控制周期使用新值。
+
+## PWM 中位与安装微调
+
+`include/flight_config.h` 中统一定义 `PWM_CENTER_US = 1500`。遥控滚转、俯仰、偏航归一化以及通道 7 构型系数也以 1500 为零点；同一个遥控 PWM 数值产生的期望量会随中位修改而变化。
+
+舵面安装 trim 从旧值增加 20 μs，保持 `1500 + 新 trim` 等于原来的机械中位。当前常量如下（单位 μs）：
+
+| 机体 | 左副翼 trim | 右副翼 trim | 升降舵 trim |
+| --- | ---: | ---: | ---: |
+| A | 180 | -155 | 40 |
+| B | 205 | -20 | 62 |
+| C | 150 | -152 | -30 |
+| D | 122 | -163 | 170 |
+| E | 140 | -170 | -30 |
+| F | 154 | -187 | 29 |
+| G | 190 | -170 | 200 |
+
+方向舵 trim 为 20；油门起点仍为 1100，trim 保持 0。TESTBED 的副翼和升降舵 trim 同样增加 20。
+
+`scaleCommands()` 的 A 机舵面逻辑限幅同步移至 1080～1900，以保留原来的相对行程；油门、Servo 硬件脉宽范围及 INDI 的物理 PWM 限幅保持原值。INDI 的绝对 PWM 到舵角标定继续使用原拟合系数，其中立初始化使用 `PWM_CENTER_US + pwm_channel3_trim`。
+
+从机升降舵到副翼的补偿从本地俯仰 PWM 中扣除本机机械中位，并还原为控制方向，再按各副翼 rev 转成物理偏移。机械 trim 不参与控制补偿，零控制量时补偿为零。去除 trim 后的日志 PWM 以 1500 为基准。
+
+迁移对比使用原、新 `scaleCommands()` 和执行器实现，检查 A 主机与 F 从机分支各 42 组相同归一化指令，包括中立、刹车、控制模式和饱和情况：中立指令一致，测试中的 PWM 指令最大差异为 1 μs，来自中位变化后的整数截断。
+
+## 执行器指令准备
+
+主循环按以下顺序执行：
+
+```cpp
+controlMixer();
+scaleCommands();
+prepareActuatorCommands();
+applyAndTransmitActuatorCommands();
+```
+
+`control_modes.cpp` 输出归一化的 `*_scaled` 和未反向的升降舵前馈偏移。`scaleCommands()` 位于 `actuator_output.cpp`，更新私有的 `*_control_us`：它们以 1500 为逻辑零点，尚未加机械 trim 或应用反向，不能当作最终 PWM。
+
+`prepareActuatorCommands()` 按 `1500 + 安装trim + rev × 控制偏移` 生成最终的 `*_PWM`。A 主机准备本机输出和 B～G 子机缓存；从机使用已反向、已加 trim 的接收 PWM，只对新增本地补偿和阻尼应用 rev。升降舵前馈由主机反向一次，接收端直接叠加。
+
+本地升降舵计算、从机手动覆盖、前馈、副翼补偿和滚转阻尼均在 prepare 阶段完成。INDI 使用实测的物理 PWM 标定输出，不重复应用 rev/trim。`Aele_PWM` 表示最终本地升降舵输出，通信回传直接使用该值，不再重复叠加前馈。
+
+`applyAndTransmitActuatorCommands()` 只将准备好的五路 PWM 写入 Servo，并发送或转发机间数据。
+
+## 串口映射
+
+串口宏统一定义在 `include/serial_ports.h`，业务模块按设备用途调用；修改接线时只需调整此处映射。
+
+| 名称 | 硬件串口 | 用途 |
+| --- | --- | --- |
+| `USBSerial` | `Serial` | USB 调试、参数读取与修改 |
+| `ParentSerial` | `Serial6` | 上级机体链路 |
+| `LeftChildSerial` | `Serial3` | 左侧子机链路 |
+| `RightChildSerial` | `Serial5` | 右侧子机链路 |
+| `ExternalImuSerial` | `Serial1` | 外置 IMU |
+| `SbusSerial` | `Serial2` | SBUS 接收机 |
+| `DsmSerial` | `Serial3` | DSM 接收机 |
+| `StrainSensorSerial` / `AngleSensorSerial` | `Serial7` | 应变 / 转角传感器 |
+| `TelemetrySerial` | `Serial8` | 数传发送及 airdata 接收 |
 
 ## 构建
 
@@ -67,25 +130,29 @@
 .
 ├── src/
 │   ├── main.cpp                 # 硬件初始化和主循环调度
-│   ├── flight_clock.cpp         # 循环时间状态与更新
+│   ├── flight_clock.cpp         # 循环时间状态、更新与限速
 │   ├── actuator_output.cpp      # 舵机初始化、PWM 修正与指令输出
 │   ├── control_modes.cpp        # 控制状态、控制律、混控和 failsafe
-│   ├── human_interface.cpp      # 显示与按键状态、SD 日志和数传
+│   ├── human_interface.cpp      # 显示与按键状态
+│   ├── telemetry.cpp            # 数传串口初始化和数据帧发送
+│   ├── logger.cpp               # SD 初始化、日志文件编号和周期记录
 │   ├── debug_print.cpp          # 调试输出及其计时状态
 │   ├── interaircraft_comm.cpp   # 机间串口收发、命令组装与级联转发
 │   ├── sensor_processing.cpp    # 传感器初始化、采样与校准
 │   ├── filters.cpp              # 低通滤波、角加速度滤波与 Madgwick 姿态融合
-│   ├── math_utils.cpp           # 循环限速、数值渐变及四元数换算
+│   ├── math_utils.cpp           # 数值渐变及四元数换算
 │   ├── control_allocation.cpp   # 多体动力学矩阵及控制分配
-│   └── radioComm.cpp            # SBUS/PWM/PPM/DSM 遥控接收
+│   └── radio_comm.cpp            # SBUS/PWM/PPM/DSM 遥控接收
 ├── lib/                         # 随仓库保存的硬件驱动和 Arduino 库
 ├── include/flight_config.h      # 飞机身份与控制条件编译配置
 ├── include/flight_clock.h       # 循环时间接口
 ├── include/control_state.h      # 必须跨模块使用的控制量
 ├── include/control_allocation.h # 控制分配接口
-├── include/radioComm.h          # 遥控接收接口
+├── include/radio_comm.h          # 遥控接收接口
 ├── include/control_modes.h      # 控制模块接口
 ├── include/human_interface.h    # 人机交互模块接口
+├── include/telemetry.h          # 数传模块接口
+├── include/logger.h             # SD 日志模块接口
 ├── include/debug_print.h        # 调试输出接口
 ├── include/interaircraft_comm.h # 机间通信模块接口
 ├── include/sensor_processing.h  # 传感器模块接口与共享数据类型

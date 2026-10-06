@@ -5,3 +5,7 @@ extern float dt;
 extern unsigned long current_time;
 
 void updateFlightClock(); // 使用无符号差值计算，兼容 micros() 回绕。
+
+// 使用 current_time 忙等到本轮达到目标周期；freq 单位为 Hz。
+// 若本轮已超时则立即返回，无法补偿超时。
+void loopRate(int freq);

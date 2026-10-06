@@ -358,7 +358,7 @@ $$
 
 $$
 k_c=1+\operatorname{constrain}
-\left(\frac{ch7-1520}{500},-1,1\right).
+\left(\frac{ch7-1500}{500},-1,1\right).
 $$
 
 TEAM 参数为 $K_{ff,f}=0.1$、$K_{p,f}=0.2$、$K_{i,f}=0.2$。实现见 `main.cpp:5432-5629`。
@@ -417,7 +417,7 @@ $$
 其余六机使用关于中央 A 机近似左右对称的固定系数，完整实现见 `main.cpp:2432-2558`。归一化舵面量按
 
 $$
-PWM_{surface}=1520+1000\delta,
+PWM_{surface}=1500+1000\delta,
 $$
 
 油门按

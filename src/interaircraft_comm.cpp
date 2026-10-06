@@ -1,3 +1,4 @@
+#include "serial_ports.h"
 #include "interaircraft_comm.h"
 #include "flight_config.h"
 #include "control_state.h"
@@ -19,6 +20,9 @@ struct ReceivedCommandData {
   bool int_is_valid;
   bool Force_manual;
 };
+
+static bool parentCommandReceived = false;
+bool hasReceivedParentCommand() { return parentCommandReceived; }
 
 // 向A的左发 F<-D<-B<-A
 static int servoCommandsleft[12] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
@@ -139,18 +143,18 @@ void forwardReceivedChildCommands(bool intIsValid) {
 #endif
 }
 
-// 以 921600 波特率启动面向上一级机体的 Serial6。
-void beginParentLink() { Serial6.begin(921600); }
-// 以 921600 波特率启动左右子机所用的 Serial3 与 Serial5。
+// 以 921600 波特率启动面向上一级机体的 ParentSerial。
+void beginParentLink() { ParentSerial.begin(921600); }
+// 以 921600 波特率启动左右子机所用的 LeftChildSerial 与 RightChildSerial。
 void beginChildLinks() {
-  Serial5.begin(921600);
-  Serial3.begin(921600);
+  RightChildSerial.begin(921600);
+  LeftChildSerial.begin(921600);
 }
 
 void printReceivedData();
 
 // 从机将本机及更远机体的转角、角速度、姿态和升降舵 PWM 组成 33 字节状态帧。
-// 状态按 0.1 单位量化，以设定频率通过 Serial6 发往上一级机体。
+// 状态按 0.1 单位量化，以设定频率通过 ParentSerial 发往上一级机体。
 void sendGYROxANGLE() // 从机要做的
 {
 
@@ -184,7 +188,7 @@ void sendGYROxANGLE() // 从机要做的
   THETAALL[0] = pitch_IMU;                 // 自己
   THETAALL[1] = thetaD_raw;                // 听来的
   THETAALL[2] = thetaF_raw;                // 听来的
-  ELEPWM[0] = Aele_PWM + Local_ele_ff_PWM; // 自己
+  ELEPWM[0] = Aele_PWM; // 自己
   ELEPWM[1] = Dele_PWM;                    // 听来的
   ELEPWM[2] = Fele_PWM;                    // 听来的
 
@@ -201,7 +205,7 @@ void sendGYROxANGLE() // 从机要做的
   THETAALL[0] = pitch_IMU;                 // 自己
   THETAALL[1] = thetaE_raw;                // 听来的
   THETAALL[2] = thetaG_raw;                // 听来的
-  ELEPWM[0] = Aele_PWM + Local_ele_ff_PWM; // 自己
+  ELEPWM[0] = Aele_PWM; // 自己
   ELEPWM[1] = Eele_PWM;                    // 听来的
   ELEPWM[2] = Gele_PWM;                    // 听来的
 
@@ -219,7 +223,7 @@ void sendGYROxANGLE() // 从机要做的
   THETAALL[1] = pitch_IMU;                 // 自己
   THETAALL[2] = thetaF_raw;                // 自己
   ELEPWM[0] = 0;                           //
-  ELEPWM[1] = Aele_PWM + Local_ele_ff_PWM; // 自己的
+  ELEPWM[1] = Aele_PWM; // 自己的
   ELEPWM[2] = Fele_PWM;                    // 听来的
 #elif defined EPLANE
   RelativeAngleAll[0] = 0.0;
@@ -235,7 +239,7 @@ void sendGYROxANGLE() // 从机要做的
   THETAALL[1] = pitch_IMU;                 // 自己
   THETAALL[2] = thetaG_raw;                // 自己
   ELEPWM[0] = 0;                           //
-  ELEPWM[1] = Aele_PWM + Local_ele_ff_PWM; // 自己的
+  ELEPWM[1] = Aele_PWM; // 自己的
   ELEPWM[2] = Gele_PWM;                    // 听来的
 #elif defined FPLANE
   RelativeAngleAll[0] = 0.0;
@@ -252,7 +256,7 @@ void sendGYROxANGLE() // 从机要做的
   THETAALL[2] = pitch_IMU;                 // 自己
   ELEPWM[0] = 0;                           //
   ELEPWM[1] = 0;                           //
-  ELEPWM[2] = Aele_PWM + Local_ele_ff_PWM; // 听来的
+  ELEPWM[2] = Aele_PWM; // 听来的
 #elif defined GPLANE
   RelativeAngleAll[0] = 0.0;
   RelativeAngleAll[1] = 0.0;
@@ -268,7 +272,7 @@ void sendGYROxANGLE() // 从机要做的
   THETAALL[2] = pitch_IMU;                 // 自己
   ELEPWM[0] = 0;                           //
   ELEPWM[1] = 0;                           //
-  ELEPWM[2] = Aele_PWM + Local_ele_ff_PWM; // 听来的
+  ELEPWM[2] = Aele_PWM; // 听来的
 #endif
 
   float invFreq = 1.0 / Freqsendback * 1000000.0;
@@ -346,11 +350,11 @@ void sendGYROxANGLE() // 从机要做的
   // for (int i = 2; i < 20; i++) checksum1 += buffer[i];
 
   // 5. 发送
-  Serial6.write(buffer, sizeof(buffer));
+  ParentSerial.write(buffer, sizeof(buffer));
 }
 
 
-// 将左侧三架子机的控制缓存编码为 50 字节指令帧，经 Serial3 下发。
+// 将左侧三架子机的控制缓存编码为 50 字节指令帧，经 LeftChildSerial 下发。
 // int_is_valid 表示是否允许积分控制；发送频率由 transfreq 限制。
 static void sendAllDataleft(int servoCommandsleft[12], float pitchAnglesleft[3],
                      int elePwmLeft[3], int eleFFPwmLeft[3],
@@ -424,10 +428,10 @@ static void sendAllDataleft(int servoCommandsleft[12], float pitchAnglesleft[3],
   // 7. 校验和
   buffer[pos] = checksum;
   // 8. 一次性发送
-  Serial3.write(buffer, sizeof(buffer));
+  LeftChildSerial.write(buffer, sizeof(buffer));
 }
 
-// 将右侧三架子机的控制缓存编码为 50 字节指令帧，经 Serial5 下发。
+// 将右侧三架子机的控制缓存编码为 50 字节指令帧，经 RightChildSerial 下发。
 // int_is_valid 表示是否允许积分控制；发送频率由 transfreq 限制。
 static void sendAllDataright(int servoCommandsright[12], float pitchAnglesright[3],
                       int elePwmRight[3], int eleFFPwmRight[3],
@@ -502,19 +506,19 @@ static void sendAllDataright(int servoCommandsright[12], float pitchAnglesright[
   // 7. 校验和
   buffer[pos] = checksum;
   // 8. 一次性发送
-  Serial5.write(buffer, sizeof(buffer));
+  RightChildSerial.write(buffer, sizeof(buffer));
 }
 
 // 接受指令数据
-// 从 Serial6 接收上一级机体的 50 字节指令帧；校验通过后提取本机舵面和模式指令。
+// 从 ParentSerial 接收上一级机体的 50 字节指令帧；校验通过后提取本机舵面和模式指令。
 void receiveCommandData() {
 
   static uint8_t buffer[50];
   static uint8_t pos = 0;
 
-  while (Serial6.available()) {
-    uint8_t byte = Serial6.read();
-    // Serial.println("ss");
+  while (ParentSerial.available()) {
+    uint8_t byte = ParentSerial.read();
+    // USBSerial.println("ss");
     //  检查数据头
     if (pos == 0 && byte != 0x55)
       continue;
@@ -528,17 +532,18 @@ void receiveCommandData() {
     // 完整数据包接收
     if (pos == 50) {
       pos = 0;
-      // Serial.println("ok");
+      // USBSerial.println("ok");
       //  计算校验和 (0x55 + 0x60 + 数据字节)
       uint8_t checksum = 0x55 + 0x60;
       for (int i = 2; i < 49; i++) {
         checksum += buffer[i];
       }
-      // Serial.print(checksum);
-      // Serial.print(" ");
-      // Serial.println(buffer[49]);
+      // USBSerial.print(checksum);
+      // USBSerial.print(" ");
+      // USBSerial.println(buffer[49]);
       //  验证校验和
       if (checksum == buffer[49]) {
+        parentCommandReceived = true;
         int bufPos = 2; // 数据起始位置
 
         // 依序读取积分控制有效标志与强制手动标志。
@@ -624,38 +629,38 @@ void receiveCommandData() {
 // 将最近收到的指令帧各字段打印到调试串口；每调用一次计数加一。
 void printReceivedData() {
   static uint32_t frameCount = 0;
-  Serial.printf("\n=== 帧#%d ===\n", ++frameCount);
-  Serial.printf("int_valid:%d force_manual:%d\n", recvData.int_is_valid ? 1 : 0,
+  USBSerial.printf("\n=== 帧#%d ===\n", ++frameCount);
+  USBSerial.printf("int_valid:%d force_manual:%d\n", recvData.int_is_valid ? 1 : 0,
                 recvData.Force_manual ? 1 : 0);
 
   // 舵机指令
-  Serial.print("舵机: ");
+  USBSerial.print("舵机: ");
   for (int i = 0; i < 12; i++)
-    Serial.printf("%d ", recvData.servo[i]);
+    USBSerial.printf("%d ", recvData.servo[i]);
 
   // 俯仰角
-  Serial.print("\n俯仰: ");
+  USBSerial.print("\n俯仰: ");
   for (int i = 0; i < 3; i++)
-    Serial.printf("%.3f ", recvData.pitch[i]);
+    USBSerial.printf("%.3f ", recvData.pitch[i]);
 
   // 升降舵PWM
-  Serial.print("\nELEPWM: ");
+  USBSerial.print("\nELEPWM: ");
   for (int i = 0; i < 3; i++)
-    Serial.printf("%d ", recvData.ele_pwm[i]);
+    USBSerial.printf("%d ", recvData.ele_pwm[i]);
 
-  Serial.print("\nELEFFPWM: ");
+  USBSerial.print("\nELEFFPWM: ");
   for (int i = 0; i < 3; i++)
-    Serial.printf("%d ", recvData.ele_ff_pwm[i]);
+    USBSerial.printf("%d ", recvData.ele_ff_pwm[i]);
 
   // 灯光
-  Serial.print("\n灯光: ");
+  USBSerial.print("\n灯光: ");
   for (int i = 0; i < 3; i++)
-    Serial.print(recvData.lights[i] ? "1 " : "0 ");
+    USBSerial.print(recvData.lights[i] ? "1 " : "0 ");
 
-  Serial.println("\n=============");
+  USBSerial.println("\n=============");
 }
 
-// 从 Serial3 接收左侧 33 字节状态帧，更新 B、D、F 机的相对角与姿态状态。
+// 从 LeftChildSerial 接收左侧 33 字节状态帧，更新 B、D、F 机的相对角与姿态状态。
 void getGYROxANGLEleft() {
   static uint8_t buffer[33];
   static uint8_t pos = 0;
@@ -665,8 +670,8 @@ void getGYROxANGLEleft() {
   float phi_raw[3];
   float theta_raw[3];
   float ele_pwm[3];
-  while (Serial3.available()) {
-    uint8_t byte = Serial3.read();
+  while (LeftChildSerial.available()) {
+    uint8_t byte = LeftChildSerial.read();
 
     // 检查数据头
     if (pos == 0 && byte != 0x55)
@@ -690,7 +695,7 @@ void getGYROxANGLEleft() {
 
       if (checksum == buffer[32]) {
         int bufPos = 2;
-        // Serial.println("ok");
+        // USBSerial.println("ok");
         //  提取角度数据
         for (int i = 0; i < 3; i++) {
           relativeangleleft[i] =
@@ -742,7 +747,7 @@ void getGYROxANGLEleft() {
   }
 }
 
-// 从 Serial5 接收右侧 33 字节状态帧，更新 C、E、G 机的相对角与姿态状态。
+// 从 RightChildSerial 接收右侧 33 字节状态帧，更新 C、E、G 机的相对角与姿态状态。
 void getGYROxANGLEright() {
   static uint8_t buffer[33]; // 2+1+6+6+6+6+6;
   static uint8_t pos = 0;
@@ -752,8 +757,8 @@ void getGYROxANGLEright() {
   float phi_raw[3];
   float theta_raw[3];
   float ele_pwm[3];
-  while (Serial5.available()) {
-    uint8_t byte = Serial5.read();
+  while (RightChildSerial.available()) {
+    uint8_t byte = RightChildSerial.read();
 
     // 检查数据头
     if (pos == 0 && byte != 0x55)
@@ -841,7 +846,6 @@ void receiveAdjacentAircraftStates() {
   // 主机接收两边，但是从机接收一边
   getGYROxANGLEright(); // 得到三个p，3个转角 计算出pac pce peg
   getGYROxANGLEleft();  // 得到三个p，2个转角 计算出pab pbd pdf
-  // telemetry(); //数传。 传输等效姿态角，相对转角，相对扭转角 10hz
 
 #elif defined BPLANE || defined DPLANE || defined FPLANE // 是左边从机
   getGYROxANGLEleft(); // 得到三个p，2个转角 计算出pab pbd pdf

@@ -79,6 +79,8 @@ void getIMUdata();
 void calculate_IMU_error();
 void calibrateMagnetometer();
 void getairspeed();
+// 角加速度估计器的专用滤波初始化；由 initializeControlFilters() 调用。
+void initializeAngularAccelerationFilters();
 void getAngularACC();
 void getbarodata();
 void initBAROMETER();

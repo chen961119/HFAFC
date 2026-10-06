@@ -2,6 +2,7 @@
 #include "flight_config.h"
 #include "sensor_processing.h"
 #include "math_utils.h"
+#include "flight_clock.h"
 
 PX4LowPassFilter2p gyroFiltX, gyroFiltY, gyroFiltZ;
 PX4LowPassFilter2p gyroFiltYIndi, gyroFiltXIndi, gyroFiltZIndi;
@@ -37,31 +38,6 @@ void PX4LowPassFilter2p::reset(float sample) {
   _delay_element_1 = _delay_element_2 = sample / (1.0f + _a1 + _a2);
 }
 
-// 角加速度低通滤波器（三轴）
-static PX4LowPassFilter2p gyroDerivFiltX, gyroDerivFiltY,
-    gyroDerivFiltZ; // getAngularACC() 求 dp/dq/dr 前的角速度滤波
-
-static PX4LowPassFilter2p angularAccFiltX, angularAccFiltY, angularAccFiltZ;
-
-// 为角速度差分前后两级滤波器设置 500 Hz 采样参数。
-void initializeAngularAccelerationFilters() {
-  angularAccFiltX.set_cutoff_frequency(500, 100);
-  angularAccFiltY.set_cutoff_frequency(500, 20);
-  angularAccFiltZ.set_cutoff_frequency(500, 100);
-  gyroDerivFiltX.set_cutoff_frequency(500, 100);
-  gyroDerivFiltY.set_cutoff_frequency(500, 40);
-  gyroDerivFiltZ.set_cutoff_frequency(500, 100);
-}
-
-// 前次滤波后陀螺仪值（用于差分）
-float gyroX_filt_prev = 0.0f;
-float gyroY_filt_prev = 0.0f;
-float gyroZ_filt_prev = 0.0f;
-// 前次差分时间（微秒）
-unsigned long prev_time_gyro_deriv = 0;
-
-float dp, dq, dr;
-
 // 初始化姿态控制和 INDI 控制所用的独立角速度滤波器。
 void initializeControlFilters() {
   // 控制环按 500 Hz 采样；INDI 与常规姿态控制使用独立滤波器状态。
@@ -73,48 +49,6 @@ void initializeControlFilters() {
   gyroFiltXIndi.set_cutoff_frequency(500, 100);
   gyroFiltZIndi.set_cutoff_frequency(500, 100);
 }
-
-// 由内置陀螺仪角速度计算 dp、dq、dr，单位为 °/s²；异常采样间隔时清零输出。
-void getAngularACC() {
-  // 先平滑角速度再差分，最后滤波并限幅，避免差分放大传感器噪声。
-  unsigned long now = micros();
-
-  float dt_deriv = (now - prev_time_gyro_deriv) * 1.0e-6f;
-  prev_time_gyro_deriv = now;
-
-  if (dt_deriv <= 0.0f || dt_deriv > 0.01f) {
-    // 首次调用或采样中断后重建历史值，跳过本次角加速度计算。
-    gyroX_filt_prev = gyroDerivFiltX.apply(-GyroX_6050);
-    gyroY_filt_prev = gyroDerivFiltY.apply(GyroY_6050);
-    gyroZ_filt_prev = gyroDerivFiltZ.apply(GyroZ_6050);
-    dp = 0.0f;
-    dq = 0.0f;
-    dr = 0.0f;
-    return;
-  }
-
-  float gyroX_now = gyroDerivFiltX.apply(-GyroX_6050);
-  float gyroY_now = gyroDerivFiltY.apply(GyroY_6050);
-  float gyroZ_now = gyroDerivFiltZ.apply(GyroZ_6050);
-
-  float dp_raw = (gyroX_now - gyroX_filt_prev) / dt_deriv;
-  float dq_raw = (gyroY_now - gyroY_filt_prev) / dt_deriv;
-  float dr_raw = (gyroZ_now - gyroZ_filt_prev) / dt_deriv;
-
-  dp = angularAccFiltX.apply(dp_raw);
-  dq = angularAccFiltY.apply(dq_raw);
-  dr = angularAccFiltZ.apply(dr_raw);
-
-  gyroX_filt_prev = gyroX_now;
-  gyroY_filt_prev = gyroY_now;
-  gyroZ_filt_prev = gyroZ_now;
-
-  const float deriv_limit = 3000.0f;
-  dp = constrain(dp, -deriv_limit, deriv_limit);
-  dq = constrain(dq, -deriv_limit, deriv_limit);
-  dr = constrain(dr, -deriv_limit, deriv_limit);
-}
-
 
 float B_madgwick = 0.04; // 九轴姿态校正权重。
 float B_madgwick_adaptive = 0.04; // 动态权重
@@ -129,11 +63,12 @@ float q3 = 0.0f;
 
 
 // 使用九轴 Madgwick 算法更新共享姿态四元数与欧拉角；磁力计无效时改用六轴算法。
-// 参数名沿用旧接口，实际传入相邻采样间隔，单位为秒。
-void Madgwick(float invSampleFreq) {
+// 直接使用飞行时钟的 dt（秒）。
+void Madgwick() {
+#if defined INTIMU
   // 九轴姿态融合：陀螺仪积分预测姿态，加速度计与磁力计提供校正。
   // 当前仅启用 MPU6050 时走六轴分支；磁力计全零时也回退至六轴分支。
-  // 参数名沿用旧代码，实际含义为本轮时间间隔（秒）；输出欧拉角单位为度。
+  // 使用本轮采样间隔 dt；输出欧拉角单位为度。
   float gx, gy, gz, ax, ay, az, mx, my, mz;
   float recipNorm;
   float s0, s1, s2, s3;
@@ -146,14 +81,14 @@ void Madgwick(float invSampleFreq) {
 // 仅有 MPU6050 时没有有效磁力计输入。
 #if defined USE_MPU6050_I2C && !defined USE_MPU9250_SPI
   Madgwick6DOF(GyroX_6050, GyroY_6050, GyroZ_6050, AccX_6050, AccY_6050,
-               AccZ_6050, invSampleFreq);
+               AccZ_6050, dt);
   return;
 #endif
 
   // 磁力计三轴全零时无法归一化，改用六轴算法。
   if ((MagY_9250 == 0.0f) && (-MagX_9250 == 0.0f) && (MagZ_9250 == 0.0f)) {
     Madgwick6DOF(GyroX_9250, GyroY_9250, GyroZ_9250, AccX_9250, AccY_9250,
-                 AccZ_9250, invSampleFreq);
+                 AccZ_9250, dt);
     return;
   }
 
@@ -285,10 +220,10 @@ void Madgwick(float invSampleFreq) {
   }
 
   // 用本轮时间间隔积分，并重新归一化四元数。
-  q0 += qDot1 * invSampleFreq;
-  q1 += qDot2 * invSampleFreq;
-  q2 += qDot3 * invSampleFreq;
-  q3 += qDot4 * invSampleFreq;
+  q0 += qDot1 * dt;
+  q1 += qDot2 * dt;
+  q2 += qDot3 * dt;
+  q3 += qDot4 * dt;
 
   recipNorm = invSqrt(q0 * q0 + q1 * q1 + q2 * q2 + q3 * q3);
   q0 *= recipNorm;
@@ -304,6 +239,8 @@ void Madgwick(float invSampleFreq) {
       57.29577951; // 转为度。
   yaw_IMU = atan2(q1 * q2 + q0 * q3, 0.5f - q2 * q2 - q3 * q3) *
             57.29577951; // 转为度。
+
+#endif
 }
 
 // 用陀螺仪和加速度计进行六轴姿态融合，更新共享四元数及欧拉角。
@@ -409,40 +346,4 @@ void Madgwick6DOF(float gx, float gy, float gz, float ax, float ay, float az,
       57.29577951; // 转为度。
   yaw_IMU = atan2(q1 * q2 + q0 * q3, 0.5f - q2 * q2 - q3 * q3) *
             57.29577951; // 转为度。
-}
-
-
-// 根据当前加速度和可用磁场读数初始化姿态四元数；供上电初始姿态估计使用。
-void eulerToQuaternion() {
-  // 将角度从度数转换为弧度
-
-  float phi, theta, psi;
-#if defined USE_MPU6050_I2C
-  phi = atan2(AccY_6050, AccZ_6050); // 滚转角，绕 x 轴。
-  theta = atan2(-AccX_6050, sqrt(AccY_6050 * AccY_6050 +
-                                 AccZ_6050 * AccZ_6050)); // 俯仰角，绕 y 轴。
-  psi = 0;                                                // 无磁力计时偏航角初始化为 0。
-#endif
-
-#if defined USE_MPU9250_SPI
-  phi = atan2(AccY_9250, AccZ_9250); // 滚转角，绕 x 轴。
-  theta = atan2(-AccX_9250, sqrt(AccY_9250 * AccY_9250 +
-                                 AccZ_9250 * AccZ_9250)); // 俯仰角，绕 y 轴。
-  psi = atan2(-MagX_9250, MagY_9250);                     // 偏航角由磁力计初始化。
-#endif
-
-  // 计算中间变量
-  float cosPhi_2 = cos(phi / 2.0);
-  float sinPhi_2 = sin(phi / 2.0);
-  float cosTheta_2 = cos(theta / 2.0);
-  float sinTheta_2 = sin(theta / 2.0);
-  float cosPsi_2 = cos(psi / 2.0);
-  float sinPsi_2 = sin(psi / 2.0);
-
-  // 计算四元数的各分量
-
-  q0 = cosPhi_2 * cosTheta_2 * cosPsi_2 + sinPhi_2 * sinTheta_2 * sinPsi_2;
-  q1 = sinPhi_2 * cosTheta_2 * cosPsi_2 - cosPhi_2 * sinTheta_2 * sinPsi_2;
-  q2 = cosPhi_2 * sinTheta_2 * cosPsi_2 + sinPhi_2 * cosTheta_2 * sinPsi_2;
-  q3 = cosPhi_2 * cosTheta_2 * sinPsi_2 - sinPhi_2 * sinTheta_2 * cosPsi_2;
 }

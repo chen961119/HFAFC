@@ -18,15 +18,12 @@ private:
 
 extern PX4LowPassFilter2p gyroFiltX, gyroFiltY, gyroFiltZ;
 extern PX4LowPassFilter2p gyroFiltYIndi, gyroFiltXIndi, gyroFiltZIndi;
-// 角加速度为 deg/s²，欧拉角为度；四元数无量纲。
-extern float dp, dq, dr;
+// 欧拉角为度；四元数无量纲。
 extern float roll_IMU, pitch_IMU, yaw_IMU;
 extern float q0, q1, q2, q3;
 
 void initializeControlFilters();
-void getAngularACC();
-// 参数 invSampleFreq 沿用旧名称，实际传入的是本轮时间间隔（秒）。
-void Madgwick(float invSampleFreq);
+// 使用飞行时钟中的 dt（秒）更新姿态。
+void Madgwick();
 void Madgwick6DOF(float gx, float gy, float gz, float ax, float ay, float az,
                   float invSampleFreq);
-void eulerToQuaternion();

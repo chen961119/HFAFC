@@ -1,3 +1,4 @@
+#include "serial_ports.h"
 #include "debug_print.h"
 #include "control_state.h"
 #include "flight_clock.h"
@@ -8,24 +9,34 @@
 static unsigned long print_counter = 0;
 
 // 输出从机当前油门 PWM 指令，单位为 μs。
-void printLocalThrottle() { Serial.println(Local_thro_PWM); }
+static int32_t throttle_debug = 0;
+int32_t &localThrottleDebugSetting() { return throttle_debug; }
+void printLocalThrottle() {
+  static unsigned long last = 0;
+  if (throttle_debug == 0 || micros() - last < 100000UL) return;
+  last = micros();
+  const int room = USBSerial.availableForWrite();
+  if (room < 80) return;
+  USBSerial.printf("[THROTTLE] parent_received=%d raw_pwm=%d\n",
+                hasReceivedParentCommand() ? 1 : 0, Local_thro_PWM);
+}
 
 // 按共享时间戳节流输出遥控各通道 PWM。
 void printRadioData() {
   if (current_time - print_counter > 10000) {
     print_counter = micros();
-    Serial.print(F(" CH1:"));
-    Serial.print(channel_1_pwm);
-    Serial.print(F(" CH2:"));
-    Serial.print(channel_2_pwm);
-    Serial.print(F(" CH3:"));
-    Serial.print(channel_3_pwm);
-    Serial.print(F(" CH4:"));
-    Serial.print(channel_4_pwm);
-    Serial.print(F(" CH5:"));
-    Serial.print(channel_5_pwm);
-    Serial.print(F(" CH6:"));
-    Serial.println(channel_6_pwm);
+    USBSerial.print(F(" CH1:"));
+    USBSerial.print(channel_1_pwm);
+    USBSerial.print(F(" CH2:"));
+    USBSerial.print(channel_2_pwm);
+    USBSerial.print(F(" CH3:"));
+    USBSerial.print(channel_3_pwm);
+    USBSerial.print(F(" CH4:"));
+    USBSerial.print(channel_4_pwm);
+    USBSerial.print(F(" CH5:"));
+    USBSerial.print(channel_5_pwm);
+    USBSerial.print(F(" CH6:"));
+    USBSerial.println(channel_6_pwm);
   }
 }
 
@@ -33,14 +44,14 @@ void printRadioData() {
 void printDesiredState() {
   if (current_time - print_counter > 10000) {
     print_counter = micros();
-    Serial.print(F("thro_des:"));
-    Serial.print(thro_des);
-    Serial.print(F(" roll_des:"));
-    Serial.print(roll_des);
-    Serial.print(F(" pitch_des:"));
-    Serial.print(pitch_des);
-    Serial.print(F(" yaw_des:"));
-    Serial.println(yaw_des);
+    USBSerial.print(F("thro_des:"));
+    USBSerial.print(thro_des);
+    USBSerial.print(F(" roll_des:"));
+    USBSerial.print(roll_des);
+    USBSerial.print(F(" pitch_des:"));
+    USBSerial.print(pitch_des);
+    USBSerial.print(F(" yaw_des:"));
+    USBSerial.println(yaw_des);
   }
 }
 
@@ -49,46 +60,46 @@ void printConfigurationData() {
   if (current_time - print_counter > 10000) {
     print_counter = micros();
 #if defined userotatesensor
-    Serial.print(F("phiab:"));
-    Serial.print(relativeAngle_ready);
-    Serial.print(F("phiac:"));
-    Serial.print(phiac);
-    Serial.print(F("phibd:"));
-    Serial.print(phibd);
-    Serial.print(F("phice:"));
-    Serial.print(phice);
-    Serial.print(F("phidf:"));
-    Serial.print(phidf);
-    Serial.print(F("phieg:"));
-    Serial.print(phieg);
+    USBSerial.print(F("phiab:"));
+    USBSerial.print(relativeAngle_ready);
+    USBSerial.print(F("phiac:"));
+    USBSerial.print(phiac);
+    USBSerial.print(F("phibd:"));
+    USBSerial.print(phibd);
+    USBSerial.print(F("phice:"));
+    USBSerial.print(phice);
+    USBSerial.print(F("phidf:"));
+    USBSerial.print(phidf);
+    USBSerial.print(F("phieg:"));
+    USBSerial.print(phieg);
 #else
-    Serial.print(F("phiab:"));
-    Serial.print(Phiab_Mea);
-    Serial.print(F("phiac:"));
-    Serial.print(Phiac_Mea);
-    Serial.print(F("phibd:"));
-    Serial.print(Phibd_Mea);
-    Serial.print(F("phice:"));
-    Serial.print(Phice_Mea);
-    Serial.print(F("phidf:"));
-    Serial.print(Phidf_Mea);
-    Serial.print(F("phieg:"));
-    Serial.print(Phieg_Mea);
-    Serial.print(F("phieq:"));
-    Serial.print(roll_eq);
+    USBSerial.print(F("phiab:"));
+    USBSerial.print(Phiab_Mea);
+    USBSerial.print(F("phiac:"));
+    USBSerial.print(Phiac_Mea);
+    USBSerial.print(F("phibd:"));
+    USBSerial.print(Phibd_Mea);
+    USBSerial.print(F("phice:"));
+    USBSerial.print(Phice_Mea);
+    USBSerial.print(F("phidf:"));
+    USBSerial.print(Phidf_Mea);
+    USBSerial.print(F("phieg:"));
+    USBSerial.print(Phieg_Mea);
+    USBSerial.print(F("phieq:"));
+    USBSerial.print(roll_eq);
 #endif
-    Serial.print(F("Pb:"));
-    Serial.print(GYRO_X_B);
-    Serial.print(F("Pc:"));
-    Serial.print(GYRO_X_C);
-    Serial.print(F("Pd:"));
-    Serial.print(GYRO_X_D);
-    Serial.print(F("Pe:"));
-    Serial.print(GYRO_X_E);
-    Serial.print(F("Pf:"));
-    Serial.print(GYRO_X_F);
-    Serial.print(F("Pg:"));
-    Serial.println(GYRO_X_G);
+    USBSerial.print(F("Pb:"));
+    USBSerial.print(GYRO_X_B);
+    USBSerial.print(F("Pc:"));
+    USBSerial.print(GYRO_X_C);
+    USBSerial.print(F("Pd:"));
+    USBSerial.print(GYRO_X_D);
+    USBSerial.print(F("Pe:"));
+    USBSerial.print(GYRO_X_E);
+    USBSerial.print(F("Pf:"));
+    USBSerial.print(GYRO_X_F);
+    USBSerial.print(F("Pg:"));
+    USBSerial.println(GYRO_X_G);
   }
 }
 
@@ -96,20 +107,20 @@ void printConfigurationData() {
 void printPIDoutput() {
   if (current_time - print_counter > 10000) {
     print_counter = micros();
-    Serial.print(F("roll_PID:"));
-    Serial.print(roll_PID);
-    Serial.print(F(" pitch_PID:"));
-    Serial.print(pitch_PID);
-    Serial.print(F(" yaw_PID:"));
-    Serial.print(yaw_PID);
-    Serial.print(F(" Phiab_PID:"));
-    Serial.print(Phiab_PID);
-    Serial.print(F(" Phiac_PID:"));
-    Serial.println(Phiac_PID);
-    Serial.print(F(" Phibd_PID:"));
-    Serial.print(Phibd_PID);
-    Serial.print(F(" Phice_PID:"));
-    Serial.println(Phice_PID);
+    USBSerial.print(F("roll_PID:"));
+    USBSerial.print(roll_PID);
+    USBSerial.print(F(" pitch_PID:"));
+    USBSerial.print(pitch_PID);
+    USBSerial.print(F(" yaw_PID:"));
+    USBSerial.print(yaw_PID);
+    USBSerial.print(F(" Phiab_PID:"));
+    USBSerial.print(Phiab_PID);
+    USBSerial.print(F(" Phiac_PID:"));
+    USBSerial.println(Phiac_PID);
+    USBSerial.print(F(" Phibd_PID:"));
+    USBSerial.print(Phibd_PID);
+    USBSerial.print(F(" Phice_PID:"));
+    USBSerial.println(Phice_PID);
   }
 }
 
@@ -117,18 +128,18 @@ void printPIDoutput() {
 void printMotorCommands() {
   if (current_time - print_counter > 10000) {
     print_counter = micros();
-    Serial.print(F("m1_command:"));
-    Serial.print(m1_command_PWM);
-    Serial.print(F(" m2_command:"));
-    Serial.print(m2_command_PWM);
-    Serial.print(F(" m3_command:"));
-    Serial.print(m3_command_PWM);
-    Serial.print(F(" m4_command:"));
-    Serial.print(m4_command_PWM);
-    Serial.print(F(" m5_command:"));
-    Serial.print(m5_command_PWM);
-    Serial.print(F(" m6_command:"));
-    Serial.println(m6_command_PWM);
+    USBSerial.print(F("m1_command:"));
+    USBSerial.print(m1_command_PWM);
+    USBSerial.print(F(" m2_command:"));
+    USBSerial.print(m2_command_PWM);
+    USBSerial.print(F(" m3_command:"));
+    USBSerial.print(m3_command_PWM);
+    USBSerial.print(F(" m4_command:"));
+    USBSerial.print(m4_command_PWM);
+    USBSerial.print(F(" m5_command:"));
+    USBSerial.print(m5_command_PWM);
+    USBSerial.print(F(" m6_command:"));
+    USBSerial.println(m6_command_PWM);
   }
 }
 
@@ -136,20 +147,20 @@ void printMotorCommands() {
 void printServoCommands() {
   if (current_time - print_counter > 10000) {
     print_counter = micros();
-    Serial.print(F("Aail1:"));
-    Serial.print(Aail1_PWM);
-    Serial.print(F(" Aail2:"));
-    Serial.print(Aail2_PWM);
-    Serial.print(F(" Aele:"));
-    Serial.print(Aele_PWM);
-    Serial.print(F(" Athro:"));
-    Serial.print(Athro_PWM);
-    Serial.print(F(" Arudd:"));
-    Serial.print(Arudd_PWM);
-    Serial.print(F(" s6_command:"));
-    Serial.print(s6_command_PWM);
-    Serial.print(F(" s7_command:"));
-    Serial.println(s7_command_PWM);
+    USBSerial.print(F("Aail1:"));
+    USBSerial.print(Aail1_PWM);
+    USBSerial.print(F(" Aail2:"));
+    USBSerial.print(Aail2_PWM);
+    USBSerial.print(F(" Aele:"));
+    USBSerial.print(Aele_PWM);
+    USBSerial.print(F(" Athro:"));
+    USBSerial.print(Athro_PWM);
+    USBSerial.print(F(" Arudd:"));
+    USBSerial.print(Arudd_PWM);
+    USBSerial.print(F(" s6_command:"));
+    USBSerial.print(s6_command_PWM);
+    USBSerial.print(F(" s7_command:"));
+    USBSerial.println(s7_command_PWM);
   }
 }
 
@@ -157,8 +168,8 @@ void printServoCommands() {
 void printLoopRate() {
   if (current_time - print_counter > 10000) {
     print_counter = micros();
-    Serial.print(F("dt:"));
-    Serial.println(dt * 1000000.0); // 一个微秒microsecons=1/1000000s
+    USBSerial.print(F("dt:"));
+    USBSerial.println(dt * 1000000.0); // 一个微秒microsecons=1/1000000s
   }
 }
 
@@ -167,19 +178,19 @@ void printLoopRate() {
 void printGyroData() {
   if (current_time - print_counter > 10000) {
     print_counter = micros();
-    Serial.print(F("GyroX_6050:"));
-    Serial.print(GyroX_6050);
-    Serial.print(F(" GyroY_6050:"));
-    Serial.print(GyroY_6050);
-    Serial.print(F(" GyroZ_6050:"));
-    Serial.println(GyroZ_6050);
+    USBSerial.print(F("GyroX_6050:"));
+    USBSerial.print(GyroX_6050);
+    USBSerial.print(F(" GyroY_6050:"));
+    USBSerial.print(GyroY_6050);
+    USBSerial.print(F(" GyroZ_6050:"));
+    USBSerial.println(GyroZ_6050);
 
-    Serial.print(F("GyroX_9250:"));
-    Serial.print(GyroX_9250);
-    Serial.print(F(" GyroY_9250:"));
-    Serial.print(GyroY_9250);
-    Serial.print(F(" GyroZ_9250:"));
-    Serial.println(GyroZ_9250);
+    USBSerial.print(F("GyroX_9250:"));
+    USBSerial.print(GyroX_9250);
+    USBSerial.print(F(" GyroY_9250:"));
+    USBSerial.print(GyroY_9250);
+    USBSerial.print(F(" GyroZ_9250:"));
+    USBSerial.println(GyroZ_9250);
   }
 }
 
@@ -188,19 +199,19 @@ void printGyroData() {
 void printAccelData() {
   if (current_time - print_counter > 10000) {
     print_counter = micros();
-    Serial.print(F("AccX_6050:"));
-    Serial.print(AccX_6050);
-    Serial.print(F(" AccY_6050:"));
-    Serial.print(AccY_6050);
-    Serial.print(F(" AccZ_6050:"));
-    Serial.println(AccZ_6050);
+    USBSerial.print(F("AccX_6050:"));
+    USBSerial.print(AccX_6050);
+    USBSerial.print(F(" AccY_6050:"));
+    USBSerial.print(AccY_6050);
+    USBSerial.print(F(" AccZ_6050:"));
+    USBSerial.println(AccZ_6050);
 
-    Serial.print(F("AccX_9250:"));
-    Serial.print(AccX_9250);
-    Serial.print(F(" AccY_9250:"));
-    Serial.print(AccY_9250);
-    Serial.print(F(" AccZ_9250:"));
-    Serial.println(AccZ_9250);
+    USBSerial.print(F("AccX_9250:"));
+    USBSerial.print(AccX_9250);
+    USBSerial.print(F(" AccY_9250:"));
+    USBSerial.print(AccY_9250);
+    USBSerial.print(F(" AccZ_9250:"));
+    USBSerial.println(AccZ_9250);
   }
 }
 
@@ -209,12 +220,12 @@ void printAccelData() {
 void printMagData() {
   if (current_time - print_counter > 10000) {
     print_counter = micros();
-    Serial.print(F("MagX:"));
-    Serial.print(MagX_9250);
-    Serial.print(F(" MagY:"));
-    Serial.print(MagY_9250);
-    Serial.print(F(" MagZ:"));
-    Serial.println(MagZ_9250);
+    USBSerial.print(F("MagX:"));
+    USBSerial.print(MagX_9250);
+    USBSerial.print(F(" MagY:"));
+    USBSerial.print(MagY_9250);
+    USBSerial.print(F(" MagZ:"));
+    USBSerial.println(MagZ_9250);
   }
 }
 
@@ -223,12 +234,12 @@ void printMagData() {
 void printRollPitchYaw() {
   if (current_time - print_counter > 10000) {
     print_counter = micros();
-    Serial.print(F("roll:"));
-    Serial.print(roll_IMU);
-    Serial.print(F(" pitch:"));
-    Serial.print(pitch_IMU);
-    Serial.print(F(" yaw:"));
-    Serial.println(yaw_IMU);
+    USBSerial.print(F("roll:"));
+    USBSerial.print(roll_IMU);
+    USBSerial.print(F(" pitch:"));
+    USBSerial.print(pitch_IMU);
+    USBSerial.print(F(" yaw:"));
+    USBSerial.println(yaw_IMU);
   }
 }
 
@@ -237,13 +248,13 @@ void printRollPitchYaw() {
 void printQuaternion() {
   if (current_time - print_counter > 10000) {
     print_counter = micros();
-    Serial.print(F("q0: "));
-    Serial.print(q0);
-    Serial.print(F(" q1: "));
-    Serial.print(q1);
-    Serial.print(F(" q2: "));
-    Serial.print(q2);
-    Serial.print(F(" q3: "));
-    Serial.println(q3);
+    USBSerial.print(F("q0: "));
+    USBSerial.print(q0);
+    USBSerial.print(F(" q1: "));
+    USBSerial.print(q1);
+    USBSerial.print(F(" q2: "));
+    USBSerial.print(q2);
+    USBSerial.print(F(" q3: "));
+    USBSerial.println(q3);
   }
 }

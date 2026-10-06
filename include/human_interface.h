@@ -2,7 +2,7 @@
 
 #include "flight_config.h"
 
-// OLED 屏幕参数和人机接口函数；日志文件、按键与显示状态均由实现文件维护。
+// OLED 屏幕参数和人机接口函数；按键与显示状态均由实现文件维护。
 constexpr int SCREEN_WIDTH = 128;
 constexpr int SCREEN_HEIGHT = 32;
 constexpr int OLED_RESET = -1;
@@ -19,8 +19,4 @@ void displayID(char *ss);
 void displaySD(char *ss);
 void displayfilenum();
 void displayAttitude();
-void findMaxFileNumber();
-void loggerSINGLE();
-void loggerTEAM();
-void telemetry();
 void displayFlightModeIndicators(FlightMode mode);

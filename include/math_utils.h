@@ -2,9 +2,6 @@
 
 #include <ArduinoEigenDense.h>
 
-// 忙等到本轮达到目标周期；若本轮已超时则立即返回，无法补偿超时。
-void loopRate(int freq, unsigned long loopStartTime);
-
 float invSqrt(float x);
 float keeppositive(float command);
 float floatFaderLinear(float param, float param_min, float param_max,
@@ -12,7 +9,9 @@ float floatFaderLinear(float param, float param_min, float param_max,
 float floatFaderLinear2(float param, float param_des, float param_lower,
                         float param_upper, float fadeTime_up,
                         float fadeTime_down, int loopFreq);
-Eigen::Quaternionf eulertoqua(float roll, float pitch, float yaw); // 输入角单位为弧度。
+// phi/theta/psi 分别为绕 X/Y/Z 轴的滚转/俯仰/偏航角，单位为弧度。
+// 返回四元数，不修改共享姿态状态。
+Eigen::Quaternionf eulerToQuaternion(float phi, float theta, float psi);
 
 struct QuaternionDifferenceEuler {
   // 所有成员均为角度值（度）。
