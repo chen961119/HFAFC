@@ -6,7 +6,7 @@
 
 ## 当前固件配置
 
-当前 `src/main.cpp` 启用以下条件编译宏：
+当前 `include/flight_config.h` 启用以下条件编译宏：
 
 | 配置 | 当前值 | 说明 |
 | --- | --- | --- |
@@ -66,17 +66,38 @@
 ```text
 .
 ├── src/
-│   ├── main.cpp                 # 初始化、主循环、传感器、控制、通信和日志
+│   ├── main.cpp                 # 硬件初始化和主循环调度
+│   ├── flight_clock.cpp         # 循环时间状态与更新
+│   ├── actuator_output.cpp      # 舵机初始化、PWM 修正与指令输出
+│   ├── control_modes.cpp        # 控制状态、控制律、混控和 failsafe
+│   ├── human_interface.cpp      # 显示与按键状态、SD 日志和数传
+│   ├── debug_print.cpp          # 调试输出及其计时状态
+│   ├── interaircraft_comm.cpp   # 机间串口收发、命令组装与级联转发
+│   ├── sensor_processing.cpp    # 传感器初始化、采样与校准
+│   ├── filters.cpp              # 低通滤波、角加速度滤波与 Madgwick 姿态融合
+│   ├── math_utils.cpp           # 循环限速、数值渐变及四元数换算
 │   ├── control_allocation.cpp   # 多体动力学矩阵及控制分配
 │   └── radioComm.cpp            # SBUS/PWM/PPM/DSM 遥控接收
 ├── lib/                         # 随仓库保存的硬件驱动和 Arduino 库
-├── include/                     # 预留的项目公共头文件目录
+├── include/flight_config.h      # 飞机身份与控制条件编译配置
+├── include/flight_clock.h       # 循环时间接口
+├── include/control_state.h      # 必须跨模块使用的控制量
+├── include/control_allocation.h # 控制分配接口
+├── include/radioComm.h          # 遥控接收接口
+├── include/control_modes.h      # 控制模块接口
+├── include/human_interface.h    # 人机交互模块接口
+├── include/debug_print.h        # 调试输出接口
+├── include/interaircraft_comm.h # 机间通信模块接口
+├── include/sensor_processing.h  # 传感器模块接口与共享数据类型
+├── include/math_utils.h         # 通用数学工具接口
 ├── test/                        # 预留的 PlatformIO 测试目录
 ├── docs/                        # 飞行数据、分析脚本、论文及试验文档
 ├── platformio.ini               # PlatformIO 构建与依赖配置
 ├── REQUIREMENTS.md              # 可追踪、可验证的项目需求
 └── .gitignore                   # 生成文件与本机文件忽略规则
 ```
+
+各模块在自己的 `.cpp` 中定义状态。显示、调试和控制器内部状态不在公共头文件中暴露；确需跨模块使用的控制量由 `control_state.h` 声明。
 
 ## 软件执行流程
 

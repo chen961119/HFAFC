@@ -8,24 +8,34 @@
 
 //This file contains all necessary functions and code used for radio communication to avoid cluttering the main code
 #include <Arduino.h>
+#include "radioComm.h"
 #include <SBUS.h>  //sBus interface
-unsigned long rising_edge_start_1, rising_edge_start_2, rising_edge_start_3, rising_edge_start_4, rising_edge_start_5, rising_edge_start_6; 
-unsigned long channel_1_raw, channel_2_raw, channel_3_raw, channel_4_raw, channel_5_raw, channel_6_raw;
-int ppm_counter = 0;
-unsigned long time_ms = 0;
-extern const int ch1Pin ;
-extern const int ch2Pin ;
-extern const int ch3Pin ;
-extern const int ch4Pin ;
-extern const int ch5Pin ;
-extern const int ch6Pin ;
-extern const int PPM_Pin ;
+// NOTE: Pin 13 is reserved for onboard LED, pins 18 and 19 are reserved for the
+// MPU6050 IMU for default setup Radio: Note: If using SBUS, connect to pin 21
+// (RX5), if using DSM, connect to pin 15 (RX3)
+const int ch1Pin = 15; // throttle
+const int ch2Pin = 16; // ail
+const int ch3Pin = 17; // ele
+const int ch4Pin = 20; // rudd
+const int ch5Pin = 21; // gear (throttle cut)
+const int ch6Pin = 22; // aux1 (free aux channel)
+const int PPM_Pin = 23;
 
-#define USE_SBUS_RX
-extern SBUS sbus;
-extern uint16_t sbusChannels;
-extern bool sbusFailSafe;
-extern bool sbusLostFrame;
+static unsigned long rising_edge_start_1, rising_edge_start_2, rising_edge_start_3, rising_edge_start_4, rising_edge_start_5, rising_edge_start_6;
+static unsigned long channel_1_raw, channel_2_raw, channel_3_raw, channel_4_raw, channel_5_raw, channel_6_raw;
+static int ppm_counter = 0;
+static unsigned long time_ms = 0;
+
+
+#if defined USE_SBUS_RX
+SBUS sbus(Serial2);
+uint16_t sbusChannels[16];
+bool sbusFailSafe;
+bool sbusLostFrame;
+#endif
+#if defined USE_DSM_RX
+DSM1024 DSM;
+#endif
 
 void radioSetup() {
   //PPM Receiver 

@@ -1,63 +1,61 @@
-#include <ArduinoEigenDense.h>
+#include "control_allocation.h"
+#include "control_state.h"
+#include "sensor_processing.h"
+
 using namespace Eigen;
 
-extern float relativeAngle_ready,phiac,phibd,phice;
-extern MatrixXf M_pinv;
-extern MatrixXf H;
-extern MatrixXf Mp;
-extern MatrixXf Mpi;
-extern MatrixXf M;
-extern MatrixXf Bplusmini;
-extern MatrixXf Bplusminismall;
-extern MatrixXf Bplusfull;
-extern MatrixXf Bplusfullsmall;
-extern MatrixXf Bplusminismall_pinv;
-extern MatrixXf Bplusfullsmall_pinv;
+static MatrixXf M_pinv(18, 18);
+static MatrixXf H(35, 20);   // 使用float单精度
+static MatrixXf Mp(10, 18);  // 共提取10行（3+3+1+1+1+1）
+static MatrixXf Mpi(10, 10); // 共提取10行（3+3+1+1+1+1）
+static MatrixXf M(18, 18);
+static MatrixXf Bplusmini(4, 20);
+static MatrixXf Bplusminismall(4, 10);
+static MatrixXf Bplusfull(6, 20);
+static MatrixXf Bplusfullsmall(6, 10);
+MatrixXf Bplusminismall_pinv(10, 4);
+MatrixXf Bplusfullsmall_pinv(10, 6);
+static Matrix3f Eab, Eac, Ebd, Ece;
+static Matrix3f Ia, Ib, Ic, Id, Ie;
+VectorXf dw_config(4);  // 四个变形通道
+VectorXf dw_att(6);     // 6个整体运动通道
+VectorXf de_att(10);    // 只考虑所有的副翼
+VectorXf de_config(10); // 只考虑所有的副翼
+static VectorXf Qx(10);        // 广义力
+static VectorXf dw_rev(10);    // 广义加速度
 
-extern Matrix3f Eab, Eac, Ebd, Ece;
-extern Matrix3f Ia, Ib, Ic, Id, Ie;
+// 常量定义（与MATLAB完全一致）
+static float Mass = 0.8;
+static float Mbss = 0.8;
+static float Mcss = 0.8;
+static float Mdss = 0.8;
+static float Mess = 0.8;
 
-extern VectorXf dw_config;
-extern VectorXf dw_att;
-extern VectorXf de_att;
-extern VectorXf de_config;
-extern VectorXf Qx;
-extern VectorXf dw_rev;
+// 惯性张量（严格对应MATLAB）
+static float iaxx = 0.05, iaxy = 0, iaxz = 0.0, iayy = 0.08, iayz = 0, iazz = 0.13;
+static float ibxx = 0.05, ibxy = 0, ibxz = 0.0, ibyy = 0.08, ibyz = 0, ibzz = 0.13;
+static float icxx = 0.05, icxy = 0, icxz = 0.0, icyy = 0.08, icyz = 0, iczz = 0.13;
+static float idxx = 0.05, idxy = 0, idxz = 0, idyy = 0.08, idyz = 0, idzz = 0.13;
+static float iexx = 0.05, iexy = 0, iexz = 0, ieyy = 0.08, ieyz = 0, iezz = 0.13;
+
+// 几何参数
+static float span = 1.5; // 需要设置实际值
+static float y = 0.5 * span;
+static float c = 0.21;
+static float S = 0.32;
+
+// 位置向量（严格对应MATLAB）
+static Vector3f Rab(0, -y, 0);
+static Vector3f Rbm(0, -y, 0);
+static Vector3f Rac(0, y, 0);
+static Vector3f Rcm(0, y, 0);
+static Vector3f Rbd(0, -y, 0);
+static Vector3f Rdm(0, -y, 0);
+static Vector3f Rce(0, y, 0);
+static Vector3f Rem(0, y, 0);
 
 MatrixXf computeBeMatrix(float y, float phiab, float phiac, float phibd, float phice);
 void extractMpi();
-
-// 常量定义（与MATLAB完全一致）
-extern float Mass ;
-extern float Mbss ;
-extern float Mcss ;
-extern float Mdss ;
-extern float Mess ;
-
-// 惯性张量（严格对应MATLAB）
-// control_allocation.cpp 顶部
-extern const float iaxx, iaxy, iaxz, iayy, iayz, iazz;
-extern const float ibxx, ibxy, ibxz, ibyy, ibyz, ibzz;
-extern const float icxx, icxy, icxz, icyy, icyz, iczz;
-extern const float idxx, idxy, idxz, idyy, idyz, idzz;
-extern const float iexx, iexy, iexz, ieyy, ieyz, iezz;
-
-// 几何参数
-extern const float span; 
-extern const float y ;
-extern const float c ;
-extern const float S ;
-
-// 位置向量（严格对应MATLAB）
-// 加上 extern，且不要写 (0, -y, 0) 这种初始化参数
-extern Vector3f Rab;
-extern Vector3f Rbm;
-extern Vector3f Rac;
-extern Vector3f Rcm;
-extern Vector3f Rbd;
-extern Vector3f Rdm;
-extern Vector3f Rce;
-extern Vector3f Rem;
 
 //矩阵运算
 void initializeInertiaMatrices(Matrix3f& Ia, Matrix3f& Ib, Matrix3f& Ic, Matrix3f& Id, Matrix3f& Ie);
@@ -672,4 +670,9 @@ MatrixXf computeBeMatrix(float y, float phiab, float phiac, float phibd, float p
     
 
     return Be;
+}
+
+void initializeControlAllocation() {
+    initializeInertiaMatrices(Ia, Ib, Ic, Id, Ie);
+    initializeH();
 }

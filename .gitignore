@@ -32,6 +32,3 @@ Desktop.ini
 # Runtime logs and on-device log exports
 *.log
 datalog*.txt
-
-# Local whole-repository archive (source files remain tracked normally)
-/Compound_7_expensive_code.zip
