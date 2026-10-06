@@ -34,7 +34,7 @@ MPU6050 mpu6050;
 
 //========================================================================================================================//
 
-// Setup gyro and accel full scale value selection and scale factor
+// 根据飞控配置选择陀螺仪、加速度计的量程与原始值换算系数。
 
 #if defined USE_MPU6050_I2C
 #define GYRO_FS_SEL_250_6050 MPU6050_GYRO_FS_250
@@ -96,11 +96,15 @@ MPU6050 mpu6050;
 
 
 
+// 以 115200 波特率启动外置 IMU 所用的 Serial1。
 void beginExternalImuLink() { Serial1.begin(115200); }
+// 以 115200 波特率启动应变传感器所用的 Serial7。
 void beginStrainSensorLink() { Serial7.begin(115200); }
 
+// 在启动阶段反复读取 BMI088 并迭代姿态滤波器，使姿态估计预热。
+// 每轮以 2000 Hz 为目标节拍，循环次数由函数内常量决定。
 void calibrateAttitude() {
-  // Warm up the IMU and Madgwick filter before actuator commands are enabled.
+  // 舵机输出前预热 IMU 和姿态滤波器；每次迭代按 2000 Hz 节拍运行。
   for (int i = 0; i <= 10000; i++) {
     updateFlightClock();
     getBMI088data();
@@ -109,7 +113,7 @@ void calibrateAttitude() {
   }
 }
 
-// Sensor state shared with the flight controller and logger.
+// 传感器测量值由本模块更新，控制器与日志模块读取。
 SPISettings bmiSettings(10000000, MSBFIRST, SPI_MODE3);
 FC_Binary_Packet airdata;
 CalibrationAccGyroData calAccGyroData;
@@ -144,7 +148,10 @@ const float inv_acc_lsb = 1.0f / 5460.0f;
 const float inv_gyr_lsb = 1.0f / 16.384f;
 }
 
+// 解析 Serial1 的 11 字节外置 IMU 帧；校验通过后更新姿态角、角速度或加速度。
+// 输出角度为度、角速度为 °/s、加速度为 m/s²。
 void getIMUdata_EXT() {
+  // 串口帧长 11 字节：0x55 帧头、数据类型、8 字节数据及累加校验字节。
   static uint8_t buf[11], pos = 0;
 
   while (Serial1.available()) {
@@ -179,12 +186,12 @@ void getIMUdata_EXT() {
           // Serial.print(q1,3); Serial.print(","); Serial.print(q2,3);
           // Serial.print(","); Serial.println(q3,3);
           roll_IMU_EXT = -atan2(q0 * q1 + q2 * q3, 0.5f - q1 * q1 - q2 * q2) *
-                         57.29577951; // degrees
+                         57.29577951; // 弧度转角度。
           pitch_IMU_EXT = asin(constrain(-2.0f * (q1 * q3 - q0 * q2), -0.999999,
                                          0.999999)) *
-                          57.29577951; // degrees
+                          57.29577951; // 弧度转角度。
           yaw_IMU_EXT = atan2(q1 * q2 + q0 * q3, 0.5f - q2 * q2 - q3 * q3) *
-                        57.29577951; // degrees
+                        57.29577951; // 弧度转角度。
           // Serial.print("R:");
           // Serial.println(roll_IMU_EXT);
         } else if (buf[1] == 0x52) { // 角速度数据
@@ -214,10 +221,11 @@ void getIMUdata_EXT() {
   }
 }
 
-// 应变传感器
-// 进制转换
+// 应变传感器的五通道数据按设备协议逐通道转换。
+// 从应变响应帧中按设备字节顺序取出指定通道的 32 位有符号测量值。
+// index 范围为 0～4；调用方需先保证响应帧长度足够。
 int32_t parseChannel(uint8_t *buf, int index) {
-  // index: 第几个通道（0~4）
+  // index 为通道编号，范围 0～4。
 
   int offset = 3 + index * 4;
 
@@ -235,7 +243,8 @@ int32_t parseChannel(uint8_t *buf, int index) {
   return u.val;
 }
 
-// ===== CRC16 (Modbus) =====
+// Modbus CRC16，发送时低字节在前。
+// 计算 Modbus RTU 的 CRC16；返回值发送时先写低字节。
 uint16_t modbusCRC(uint8_t *buf, int len) {
   uint16_t crc = 0xFFFF;
 
@@ -254,7 +263,9 @@ uint16_t modbusCRC(uint8_t *buf, int len) {
   return crc;
 }
 
-// ===== 发送03读寄存器 =====
+// 发送功能码 0x03 的寄存器读取请求。
+// 构造应变传感器的 8 字节 Modbus 读取请求并写入 Serial7。
+// addr 为设备地址，fcode 为功能码，reg 为起始寄存器，num 为寄存器数量。
 void sendStrainCommand(uint8_t addr, uint16_t fcode, uint16_t reg,
                        uint16_t num) {
 
@@ -276,14 +287,16 @@ void sendStrainCommand(uint8_t addr, uint16_t fcode, uint16_t reg,
   Serial7.write(frame, 8);
 }
 
+// 按设定频率请求 10 个寄存器，并在收到足够长的响应时更新五路应变值。
 void Strain_read_all() {
+  // 按 read_Strain_freq 限制请求频率；只在收到完整响应时更新五通道值。
   float invFreq = 1.0 / read_Strain_freq * 1000000.0;
   unsigned long checker = micros();
 
   if (checker - last_read_Strain_Time < invFreq)
     return;
   last_read_Strain_Time = checker;
-  // 读取寄存器0x0000，1个寄存器
+  // 从地址 0x0000 起读取 10 个寄存器。
   sendStrainCommand(1, 0x03, 0x0000, 10);
   uint8_t buf[32];
   int len = 0;
@@ -304,21 +317,23 @@ void Strain_read_all() {
   }
 }
 
+// 经 I2C 连续读取 ICM42688 三轴加速度和角速度，并换算到共享 IMU 变量。
+// 当前量程换算后的单位分别为 g 和 °/s；通信失败时保持旧值。
 void getICM42688data() {
-  // 1. 强制切换到 Bank 0
+  // 切换到寄存器 Bank 0 后连续读取三轴加速度和三轴角速度。
   Wire.beginTransmission(ICM_ADDR);
   Wire.write(REG_ICM_BANK_SEL);
   Wire.write(0x00);
   Wire.endTransmission();
 
-  // 2. 读取 12 字节数据 (6字节加速 + 6字节陀螺仪) [cite: 1514]
+  // 连续读取 12 字节：前 6 字节为加速度，后 6 字节为陀螺仪。
   Wire.beginTransmission(ICM_ADDR);
   Wire.write(REG_ICM_ACC_DATA);
   if (Wire.endTransmission(false) != 0)
     return; // 通讯失败直接退出
 
   if (Wire.requestFrom((uint8_t)ICM_ADDR, (uint8_t)12) == 12) {
-    // ICM-42688 为 Big-Endian (高位在前) [cite: 1810]
+    // ICM-42688 数据按高字节在前拼接为有符号 16 位整数。
     int16_t raw_ax = (int16_t)(Wire.read() << 8 | Wire.read());
     int16_t raw_ay = (int16_t)(Wire.read() << 8 | Wire.read());
     int16_t raw_az = (int16_t)(Wire.read() << 8 | Wire.read());
@@ -326,9 +341,7 @@ void getICM42688data() {
     int16_t raw_gy = (int16_t)(Wire.read() << 8 | Wire.read());
     int16_t raw_gz = (int16_t)(Wire.read() << 8 | Wire.read());
 
-    // 3. 映射到你原有的 6050 变量中 (单位转换)
-    // 默认量程: Accel ±16g (2048 LSB/g), Gyro ±2000dps (16.4 LSB/dps) [cite:
-    // 168, 188]
+    // 保持控制器沿用的 6050 变量名；按当前 ±16 g、±2000 deg/s 量程换算。
     AccX_6050 = raw_ax / 2048.0;
     AccY_6050 = raw_ay / 2048.0;
     AccZ_6050 = raw_az / 2048.0;
@@ -354,7 +367,10 @@ void getICM42688data() {
   }
 }
 
+// 经 SPI 读取 BMI088，加速度与角速度按安装方向旋转 90° 并扣除 EEPROM 零偏。
+// 结果写入沿用的 6050 变量，单位分别为 g 和 °/s。
 void getBMI088data() {
+  // 加速度计 SPI 读取需要一个哑字节；陀螺仪读取不需要。
 
   uint8_t buf[6];
   const float inv_acc = 1.0f / 5460.0f; // ±6g
@@ -362,11 +378,11 @@ void getBMI088data() {
   static unsigned long lastBMI088AccDebug = 0;
   static unsigned long lastBMI088GyrDebug = 0;
 
-  // A. 读取加速度计 (注意 Dummy Byte)
+  // 读取加速度计原始值。
   SPI.beginTransaction(bmiSettings);
   digitalWrite(CS_ACC, LOW);
   SPI.transfer(0x12 | SPI_READ);
-  SPI.transfer(0x00); // 重要：哑字节
+  SPI.transfer(0x00); // 丢弃协议要求的哑字节。
   for (int i = 0; i < 6; i++)
     buf[i] = SPI.transfer(0x00);
   digitalWrite(CS_ACC, HIGH);
@@ -376,7 +392,7 @@ void getBMI088data() {
   int16_t ry = (int16_t)(buf[2] | (buf[3] << 8));
   int16_t rz = (int16_t)(buf[4] | (buf[5] << 8));
 
-  // B. 读取陀螺仪
+  // 读取陀螺仪原始值。
   SPI.beginTransaction(bmiSettings);
   digitalWrite(CS_GYR, LOW);
   SPI.transfer(0x02 | SPI_READ);
@@ -389,8 +405,7 @@ void getBMI088data() {
   int16_t rgy = (int16_t)(buf[2] | (buf[3] << 8));
   int16_t rgz = (int16_t)(buf[4] | (buf[5] << 8));
 
-  // C. 坐标轴映射 (保持你之前的 90 度旋转逻辑)
-  // 原逻辑: 新X=旧Y, 新Y=-旧X, Z不变
+  // 按安装方向绕 Z 轴旋转 90°：新 X=旧 Y，新 Y=-旧 X，Z 不变。
   AccX_6050 = (ry * inv_acc) - calAccGyroData.AccErrorX_6050;
   AccY_6050 = (-rx * inv_acc) - calAccGyroData.AccErrorY_6050;
   AccZ_6050 = (rz * inv_acc) - calAccGyroData.AccErrorZ_6050;
@@ -415,6 +430,7 @@ void getBMI088data() {
   */
 }
 
+// 以十六进制打印原始字节和三轴有符号值；用于核对 BMI088 SPI 读数。
 void printBMI088Raw(const char *tag, const uint8_t *buf, int len, int16_t x,
                     int16_t y, int16_t z) {
   Serial.print(tag);
@@ -434,6 +450,8 @@ void printBMI088Raw(const char *tag, const uint8_t *buf, int len, int16_t x,
   Serial.println(z);
 }
 
+// 从 Serial8 查找 0xAA 0x55 帧头、校验二进制数据包并更新 airdata。
+// 不合法的真空速值置零；不完整或校验失败的帧不更新共享状态。
 void getairdata() {
   while (Serial8.available() >= sizeof(FC_Binary_Packet)) {
 
@@ -472,6 +490,7 @@ void getairdata() {
 }
 
 // 辅助函数：SPI 写寄存器
+// 向指定片选引脚对应的 SPI 设备写入一个寄存器值。
 void writeRegSPI(int cs, uint8_t reg, uint8_t val) {
   SPI.beginTransaction(bmiSettings);
   digitalWrite(cs, LOW);
@@ -482,6 +501,7 @@ void writeRegSPI(int cs, uint8_t reg, uint8_t val) {
 }
 
 // 通用 I2C 寄存器写入辅助函数
+// 通过指定 I2C 总线向设备地址和寄存器写入一个字节。
 void writeReg(TwoWire &bus, uint8_t addr, uint8_t reg, uint8_t val) {
   bus.beginTransmission(addr);
   bus.write(reg);
@@ -503,19 +523,13 @@ MS4525read_Task airspeedSensor(&Wire1);
 
 
 float B_accel_6050 =
-    0.6; // Accelerometer LP filter paramter, (MPU6050 default: 0.14.
-         // 0.26at1000hz   0.6at333hz)。 1-exp((2000/当前hz)）*log(1-0.17))
-float B_gyro_6050 = 0.47;  // Gyro LP filter paramter, (MPU6050 default: 0.1.
-                           // 0.19at1000hz  0.47at333hz)
-float B_accel_9250 = 0.74; // Accelerometer LP filter paramter, ( MPU9250
-                           // default: 0.2   0.36at1000hz。 0.74at333hz)
-float B_gyro_9250 = 0.67;  // Gyro LP filter paramter, ( MPU9250 default: 0.17。
-                           // 0.31at1000hz。0.67at333hz)
-float B_mag_9250 = 1.0; // Magnetometer LP filter parameter 1.0 means no fliter
+    0.6; // MPU6050 加速度一阶低通系数；越小，平滑越强、延迟越大。
+float B_gyro_6050 = 0.47;  // MPU6050 陀螺仪低通系数。
+float B_accel_9250 = 0.74; // MPU9250 加速度低通系数。
+float B_gyro_9250 = 0.67;  // MPU9250 陀螺仪低通系数。
+float B_mag_9250 = 1.0;    // MPU9250 磁力计低通系数；1 表示直接采用本次读数。
 
-// Magnetometer calibration parameters - if using MPU9250, uncomment
-// calibrateMagnetometer() in void setup() to get these values, else just ignore
-// these
+// MPU9250 磁力计的零偏与各轴比例校准值。
 float MagErrorX_9250 = 17.33;
 float MagErrorY_9250 = 58.29;
 float MagErrorZ_9250 = 29.16;
@@ -524,9 +538,8 @@ float MagScaleY_9250 = 1.05;
 float MagScaleZ_9250 = 0.97;
 
 
-// IMU calibration parameters - calibrate IMU using calculate_IMU_error() in the
-// void setup() to get these values, then comment out calculate_IMU_error()
-// mpu6050
+// 内置 IMU 的静态校准常量；在线校准结果另存于 calAccGyroData。
+// MPU6050
 
 float AccErrorX_6050 = -0.02;
 float AccErrorY_6050 = -0.01;
@@ -535,7 +548,7 @@ float GyroErrorX_6050 = -13.83;
 float GyroErrorY_6050 = -9.41;
 float GyroErrorZ_6050 = 1.48;
 
-// mpu9250
+// MPU9250
 float AccErrorX_9250 = -0.11;
 float AccErrorY_9250 = 0.01;
 float AccErrorZ_9250 = 0.03;
@@ -546,7 +559,7 @@ float GyroErrorZ_9250 = -2.51;
 
 
 
-// IMU:
+// 内置 IMU 当前值与一阶低通的上一采样值。
 float AccX_9250, AccY_9250, AccZ_9250;
 float AccX_prev_6050, AccY_prev_6050, AccZ_prev_6050;
 float AccX_prev_9250, AccY_prev_9250, AccZ_prev_9250;
@@ -557,17 +570,17 @@ float GyroX_prev_9250, GyroY_prev_9250, GyroZ_prev_9250;
 float MagX_9250, MagY_9250, MagZ_9250;
 float MagX_prev_9250, MagY_prev_9250, MagZ_prev_9250;
 
+// 从 EEPROM 地址 100 恢复转角传感器清零偏置。
 void loadRotateSensorOffset() { EEPROM.get(eepromAddress1, relativeAngle_offset); }
+// 调用空速传感器驱动进行零点标定。
 void calibrateAirspeedSensor() { airspeedSensor.calib(); }
 
+// 按编译配置初始化内置 IMU 的总线、电源状态、量程及采样参数。
 void IMUinit() {
-// DESCRIPTION: Initialize IMU 有一个用一个，有两个用两个
-/*
- * Don't worry about how this works.
- */
+// 根据编译配置初始化内置 IMU；BMI088 通过 SPI，MPU9250 通过自身驱动初始化。
 #if defined USE_MPU6050_I2C
   Wire.begin();
-  // Wire.setClock(1000000);  //Note this is 2.5 times the spec sheet 400 kHz
+  // Wire.setClock(1000000);  // 历史配置：1 MHz 超过器件手册常用的 400 kHz。
   // max...
 
   // mpu6050.initialize();
@@ -609,9 +622,7 @@ void IMUinit() {
     }
     */
 
-  // From the reset state all registers should be 0x00, so we should be at
-  // max sample rate with digital low pass filter(s) off.  All we need to
-  // do is set the desired fullscale ranges
+  // 配置量程；BMI088 的电源和陀螺仪寄存器已在上方写入。
   mpu6050.setFullScaleGyroRange(GYRO_SCALE_6050);
   mpu6050.setFullScaleAccelRange(ACCEL_SCALE_6050);
 #endif
@@ -628,36 +639,23 @@ void IMUinit() {
     }
   }
 
-  // From the reset state all registers should be 0x00, so we should be at
-  // max sample rate with digital low pass filter(s) off.  All we need to
-  // do is set the desired fullscale ranges
+  // 配置 MPU9250 的量程、磁力计校准值与采样分频。
   mpu9250.setGyroRange(GYRO_SCALE_9250);
   mpu9250.setAccelRange(ACCEL_SCALE_9250);
   mpu9250.setMagCalX(MagErrorX_9250, MagScaleX_9250);
   mpu9250.setMagCalY(MagErrorY_9250, MagScaleY_9250);
   mpu9250.setMagCalZ(MagErrorZ_9250, MagScaleZ_9250);
   mpu9250.setSrd(
-      0); // sets gyro and accel read to 1khz, magnetometer read to 100hz
+      0); // 陀螺仪和加速度计约 1 kHz，磁力计约 100 Hz。
 #endif
 }
 
 
+// 读取 MPU6050/MPU9250 原始惯性数据，做单位换算、零偏校正和一阶低通。
+// 这是旧内置 IMU 路径，是否调用由当前硬件配置决定。
 void getIMUdata() {
-  // DESCRIPTION: Request full dataset from IMU and LP filter gyro,
-  // accelerometer, and magnetometer data
-  /*
-   * Reads accelerometer, gyro, and magnetometer data from IMU as AccX, AccY,
-   * AccZ, GyroX, GyroY, GyroZ, MagX, MagY, MagZ. These values are scaled
-   * according to the IMU datasheet to put them into correct units of g's,
-   * deg/sec, and uT. A simple first-order low-pass filter is used to get rid of
-   * high frequency noise in these raw signals. Generally you want to cut off
-   * everything past 80Hz, but if your loop rate is not fast enough, the low
-   * pass filter will cause a lag in the readings. The filter parameters B_gyro
-   * and B_accel are set to be good for a 2kHz loop rate. Finally, the constant
-   * errors found in calculate_IMU_error() on startup are subtracted from the
-   * accelerometer and gyro readings.
-   */
-  // 读数的单位是G
+  // 读取内置 IMU 原始值，换算单位、扣除零偏，再做一阶低通。
+  // 加速度单位为 g，角速度为 °/s，磁场强度为 μT。
   int16_t AcX_6050, AcY_6050, AcZ_6050, GyX_6050, GyY_6050, GyZ_6050;
   int16_t AcX_9250, AcY_9250, AcZ_9250, GyX_9250, GyY_9250, GyZ_9250, MgX_9250,
       MgY_9250, MgZ_9250;
@@ -671,15 +669,15 @@ void getIMUdata() {
                      &GyZ_9250, &MgX_9250, &MgY_9250, &MgZ_9250);
 #endif
 
-  // Accelerometer
-  AccX_6050 = AcX_6050 / ACCEL_SCALE_FACTOR; // G's
+  // 加速度：按量程系数换算为 g，随后扣除标定零偏。
+  AccX_6050 = AcX_6050 / ACCEL_SCALE_FACTOR;
   AccY_6050 = AcY_6050 / ACCEL_SCALE_FACTOR;
   AccZ_6050 = AcZ_6050 / ACCEL_SCALE_FACTOR;
-  // Correct the outputs with the calculated error values
+  // MPU6050 加速度零偏校正。
   AccX_6050 = AccX_6050 - calAccGyroData.AccErrorX_6050;
   AccY_6050 = AccY_6050 - calAccGyroData.AccErrorY_6050;
   AccZ_6050 = AccZ_6050 - calAccGyroData.AccErrorZ_6050;
-  // LP filter accelerometer data
+  // MPU6050 加速度一阶低通。
   AccX_6050 = (1.0 - B_accel_6050) * AccX_prev_6050 + B_accel_6050 * AccX_6050;
   AccY_6050 = (1.0 - B_accel_6050) * AccY_prev_6050 + B_accel_6050 * AccY_6050;
   AccZ_6050 = (1.0 - B_accel_6050) * AccZ_prev_6050 + B_accel_6050 * AccZ_6050;
@@ -687,14 +685,14 @@ void getIMUdata() {
   AccY_prev_6050 = AccY_6050;
   AccZ_prev_6050 = AccZ_6050;
 
-  AccX_9250 = AcX_9250 / ACCEL_SCALE_FACTOR; // G's
+  AccX_9250 = AcX_9250 / ACCEL_SCALE_FACTOR;
   AccY_9250 = AcY_9250 / ACCEL_SCALE_FACTOR;
   AccZ_9250 = AcZ_9250 / ACCEL_SCALE_FACTOR;
-  // Correct the outputs with the calculated error values
+  // MPU9250 加速度零偏校正。
   AccX_9250 = AccX_9250 - calAccGyroData.AccErrorX_9250;
   AccY_9250 = AccY_9250 - calAccGyroData.AccErrorY_9250;
   AccZ_9250 = AccZ_9250 - calAccGyroData.AccErrorZ_9250;
-  // LP filter accelerometer data
+  // MPU9250 加速度一阶低通。
   AccX_9250 = (1.0 - B_accel_9250) * AccX_prev_9250 + B_accel_9250 * AccX_9250;
   AccY_9250 = (1.0 - B_accel_9250) * AccY_prev_9250 + B_accel_9250 * AccY_9250;
   AccZ_9250 = (1.0 - B_accel_9250) * AccZ_prev_9250 + B_accel_9250 * AccZ_9250;
@@ -702,15 +700,15 @@ void getIMUdata() {
   AccY_prev_9250 = AccY_9250;
   AccZ_prev_9250 = AccZ_9250;
 
-  // Gyro
-  GyroX_6050 = GyX_6050 / GYRO_SCALE_FACTOR; // deg/sec
+  // 角速度：按量程系数换算为 °/s，随后扣除标定零偏。
+  GyroX_6050 = GyX_6050 / GYRO_SCALE_FACTOR;
   GyroY_6050 = GyY_6050 / GYRO_SCALE_FACTOR;
   GyroZ_6050 = GyZ_6050 / GYRO_SCALE_FACTOR;
-  // Correct the outputs with the calculated error values
+  // MPU6050 陀螺仪零偏校正。
   GyroX_6050 = GyroX_6050 - calAccGyroData.GyroErrorX_6050;
   GyroY_6050 = GyroY_6050 - calAccGyroData.GyroErrorY_6050;
   GyroZ_6050 = GyroZ_6050 - calAccGyroData.GyroErrorZ_6050;
-  // LP filter gyro data
+  // MPU6050 角速度一阶低通。
   GyroX_6050 = (1.0 - B_gyro_6050) * GyroX_prev_6050 + B_gyro_6050 * GyroX_6050;
   GyroY_6050 = (1.0 - B_gyro_6050) * GyroY_prev_6050 + B_gyro_6050 * GyroY_6050;
   GyroZ_6050 = (1.0 - B_gyro_6050) * GyroZ_prev_6050 + B_gyro_6050 * GyroZ_6050;
@@ -718,14 +716,14 @@ void getIMUdata() {
   GyroY_prev_6050 = GyroY_6050;
   GyroZ_prev_6050 = GyroZ_6050;
 
-  GyroX_9250 = GyX_9250 / GYRO_SCALE_FACTOR; // deg/sec
+  GyroX_9250 = GyX_9250 / GYRO_SCALE_FACTOR;
   GyroY_9250 = GyY_9250 / GYRO_SCALE_FACTOR;
   GyroZ_9250 = GyZ_9250 / GYRO_SCALE_FACTOR;
-  // Correct the outputs with the calculated error values
+  // MPU9250 陀螺仪零偏校正。
   GyroX_9250 = GyroX_9250 - calAccGyroData.GyroErrorX_9250;
   GyroY_9250 = GyroY_9250 - calAccGyroData.GyroErrorY_9250;
   GyroZ_9250 = GyroZ_9250 - calAccGyroData.GyroErrorZ_9250;
-  // LP filter gyro data
+  // MPU9250 角速度一阶低通。
   GyroX_9250 = (1.0 - B_gyro_9250) * GyroX_prev_9250 + B_gyro_9250 * GyroX_9250;
   GyroY_9250 = (1.0 - B_gyro_9250) * GyroY_prev_9250 + B_gyro_9250 * GyroY_9250;
   GyroZ_9250 = (1.0 - B_gyro_9250) * GyroZ_prev_9250 + B_gyro_9250 * GyroZ_9250;
@@ -733,15 +731,15 @@ void getIMUdata() {
   GyroY_prev_9250 = GyroY_9250;
   GyroZ_prev_9250 = GyroZ_9250;
 
-  // Magnetometer
-  MagX_9250 = MgX_9250 / 6.0; // uT
+  // 磁力计：先换算为 μT，再校正零偏和比例。
+  MagX_9250 = MgX_9250 / 6.0;
   MagY_9250 = MgY_9250 / 6.0;
   MagZ_9250 = MgZ_9250 / 6.0;
-  // Correct the outputs with the calculated error values
+  // MPU9250 磁力计标定。
   MagX_9250 = (MagX_9250 - MagErrorX_9250) * MagScaleX_9250;
   MagY_9250 = (MagY_9250 - MagErrorY_9250) * MagScaleY_9250;
   MagZ_9250 = (MagZ_9250 - MagErrorZ_9250) * MagScaleZ_9250;
-  // LP filter magnetometer data
+  // MPU9250 磁场一阶低通。
   MagX_9250 = (1.0 - B_mag_9250) * MagX_prev_9250 + B_mag_9250 * MagX_9250;
   MagY_9250 = (1.0 - B_mag_9250) * MagY_prev_9250 + B_mag_9250 * MagY_9250;
   MagZ_9250 = (1.0 - B_mag_9250) * MagZ_prev_9250 + B_mag_9250 * MagZ_9250;
@@ -751,8 +749,10 @@ void getIMUdata() {
 }
 
 
+// 静置采集 BMI088 多组数据，计算旋转后机体系的加速度和角速度零偏。
+// 完成后写入 EEPROM；标定期间应保持机体水平且静止。
 void calculate_IMU_error() {
-  // DESCRIPTION: 采集 12000 样本计算 BMI088 的偏置，并以 90 度旋转后的轴系存入
+  // 采集 12000 组 BMI088 数据，在旋转后的机体系计算静态零偏并写入 EEPROM。
   // EEPROM
   double sAX = 0, sAY = 0, sAZ = 0, sGX = 0, sGY = 0, sGZ = 0;
   int c = 0;
@@ -825,6 +825,8 @@ void calculate_IMU_error() {
 }
 
 
+// 运行 MPU9250 磁力计交互式标定并打印零偏和比例结果。
+// 函数结尾停机，不会返回飞行主循环。
 void calibrateMagnetometer() {
 #if defined USE_MPU9250_SPI
   float success;
@@ -870,16 +872,18 @@ void calibrateMagnetometer() {
   }
 
   while (1)
-    ; // Halt code so it won't enter main loop until this function commented out
+    ; // 标定结束后停在这里，避免直接进入飞行主循环。
 #endif
   Serial.println("Error: MPU9250 not selected. Cannot calibrate non-existent "
                  "magnetometer.");
   while (1)
-    ; // Halt code so it won't enter main loop until this function commented out
+    ; // 未启用 MPU9250 时阻止继续运行。
 }
 
 
+// 每隔至少 20 ms 从空速驱动刷新一次 airspeed_A。
 void getairspeed() {
+  // 以 50 Hz 更新空速；其他控制周期沿用上次有效测量。
   static unsigned long lastAirspeedRead = 0;
   if (micros() - lastAirspeedRead > 20000) {
     lastAirspeedRead = micros();
@@ -890,7 +894,9 @@ void getairspeed() {
 
 
 
+// 启用气压计时读取温度、气压和高度，并打印测量值。
 void getbarodata() {
+  // 读取气压计温度、气压和按标准海平面气压换算的高度。
 #if defined USE_BAROMETER
   // 快速读取原始数据
   temp = bmp.readTemperature();  // °C
@@ -904,6 +910,7 @@ void getbarodata() {
 }
 
 
+// 启用气压计时初始化 BMP280，配置 I2C 时钟、采样倍率和内部滤波。
 void initBAROMETER() {
 #if defined USE_BAROMETER
 
@@ -928,8 +935,10 @@ void initBAROMETER() {
 }
 
 
+// 从 Serial7 解析以换行结束的 Angle 文本，并按机位约定更新相对转角。
 void getRotateSensor1() // 每个飞机都要做的
 {
+  // Serial7 接收以换行结束的 "Angle:" 文本帧；不同机位采用不同角度正方向。
 
   while (Serial7.available() > 0) {
     // Serial.println("sbb");
@@ -959,6 +968,7 @@ void getRotateSensor1() // 每个飞机都要做的
 }
 
 
+// 将当前原始转角设为新零点，并将偏置写入 EEPROM 地址 100。
 void ResetRotateSensor() {
   relativeAngle_offset = relativeAngle_raw;         // 计算新偏移量
   EEPROM.put(eepromAddress1, relativeAngle_offset); // 存储到 EEPROM
@@ -970,7 +980,9 @@ void ResetRotateSensor() {
 
 
 
+// 从 EEPROM 地址 0 恢复惯性传感器零偏结构体。
 void loadImuCalibration() {
+  // 从 EEPROM 地址 0 开始恢复 BMI088 零偏结构体。
   int address = 0;
   byte *pData = (byte *)&calAccGyroData;
   for (int i = 0; i < sizeof(CalibrationAccGyroData); i++) {
@@ -978,7 +990,9 @@ void loadImuCalibration() {
   }
 }
 
+// 内置 IMU 启用时读取首帧 BMI088，并据此初始化姿态四元数。
 void initializeInitialAttitude() {
+  // 上电时用首帧加速度估计初始姿态四元数。
 #if defined INTIMU
   getBMI088data();
   eulerToQuaternion();

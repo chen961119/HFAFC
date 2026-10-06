@@ -1,5 +1,6 @@
 #pragma once
 
+// 串口诊断输出；打印节流计时由 debug_print.cpp 独立维护。
 void printRadioData();
 void printDesiredState();
 void printConfigurationData();

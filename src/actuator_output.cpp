@@ -6,7 +6,7 @@
 #include "interaircraft_comm.h"
 #include <Servo.h>
 
-// OneShot125 ESC pin outputs:
+// 预留的电调输出引脚；实际舵面由下方 Servo 对象输出 PWM。
 const int m1Pin = 37;
 const int m2Pin = 37;
 const int m3Pin = 38;
@@ -21,7 +21,7 @@ const int servo4Pin = 5; // 油门
 const int servo5Pin = 6; // 方向
 const int servo6Pin = 9;
 const int servo7Pin = 9;
-Servo servo1; // Create servo objects to control a servo or ESC with PWM
+Servo servo1; // 舵机或电调 PWM 输出对象。
 Servo servo2;
 Servo servo3;
 Servo servo4;
@@ -29,14 +29,18 @@ Servo servo5;
 Servo servo6;
 Servo servo7;
 
+// 在指定硬件版本上电阶段将 5 号引脚写为低，并延时等待执行器供电稳定。
 void prepareActuatorPower() {
+  // 指定硬件版本在绑定舵机前，先将 5 号引脚写为低并等待 100 ms。
 #if defined expensive
   digitalWrite(5, LOW);
   delay(100);
 #endif
 }
 
+// 绑定各舵机和电调引脚，配置 900～2100 μs 的输出脉宽范围。
 void attachActuators() {
+  // 指定各路执行器的有效脉宽范围，单位 μs。
   servo1.attach(servo1Pin, 900, 2100);
   servo2.attach(servo2Pin, 900, 2100);
   servo3.attach(servo3Pin, 900, 2100);
@@ -46,7 +50,9 @@ void attachActuators() {
   servo7.attach(servo7Pin, 900, 2100);
 }
 
+// 上电后先将舵面置中位、油门及预留通道置零。
 void commandSafeActuatorPositions() {
+  // 上电初始化：舵面回中，油门与预留通道置低。
   servo1.write(90);
   servo2.write(90);
   servo3.write(90);
@@ -56,8 +62,11 @@ void commandSafeActuatorPositions() {
   servo7.write(0);
 }
 
+// 以 1520 μs 为舵机中位，叠加偏置、补偿和刹车，生成各机待输出 PWM。
 void prepareActuatorCommands() {
-  // 贵的飞机做了舵面限幅
+  // 围绕 1520 μs 中位叠加升降补偿、刹车和各机微调。
+  // 本函数计算待发送指令；实际 PWM 输出由 applyAndTransmitActuatorCommands() 完成。
+  // A机
   int deviation1 = (Aail1_PWM - 1520) * 0.4;
   int deviation2 = (Aail2_PWM - 1520) * 0.4;
   int deviation3 = (Aele_PWM - 1520);
@@ -83,7 +92,6 @@ void prepareActuatorCommands() {
   Arudd_PWM = 1520 + pwm_channel5_rev * deviation5 + pwm_channel5_trim;
 
   // B机
-
   deviation1 = (Bail1_PWM - 1520) * 0.4;
   deviation2 = (Bail2_PWM - 1520) * 0.4;
   deviation4 = Bthro_PWM - 1520;
@@ -198,6 +206,7 @@ void prepareActuatorCommands() {
 
 }
 
+// 将本机 PWM 写入执行器，并按机位把子机指令沿左右通信链转发。
 void applyAndTransmitActuatorCommands() {
 #if defined APLANE // 是主机
   // servo1.write(90+40*sin(1*micros()/100000.0));

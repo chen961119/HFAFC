@@ -4,7 +4,7 @@
 #include <SPI.h>
 #include "filters.h"
 
-// Shared sensor data used by the controller and logger.
+// 外置空速/迎角传感器的打包数据，字段顺序与串口协议保持一致。
 #pragma pack(push, 1)
 struct FC_Binary_Packet {
   uint8_t head1;
@@ -19,6 +19,7 @@ struct FC_Binary_Packet {
 #pragma pack(pop)
 
 typedef struct {
+  // 各 IMU 的加速度与陀螺仪零偏，按原有 EEPROM 布局存储。
   float AccErrorX_6050;
   float AccErrorY_6050;
   float AccErrorZ_6050;
@@ -52,6 +53,7 @@ constexpr int CS_GYR = 37;
 
 void sendStrainCommand(uint8_t addr, uint16_t fcode, uint16_t reg,
                        uint16_t num);
+// 传感器读取函数更新下方共享的测量值，调用方不持有硬件接口。
 void Strain_read_all();
 void getICM42688data();
 void getBMI088data();

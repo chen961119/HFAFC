@@ -64,6 +64,7 @@ void initializeH();
 void getpinvBplusmini();
 
 // 叉乘矩阵函数（严格对应MATLAB的fan函数）
+// 将三维向量构造成反对称叉乘矩阵，使 fan(v) * w 等于 v × w。
 Matrix3f fan(const Vector3f& v) {
     Matrix3f m;
     m << 0, -v(2), v(1),
@@ -73,6 +74,7 @@ Matrix3f fan(const Vector3f& v) {
 }
 
 // 初始化惯性张量（严格对应MATLAB）
+// 用机体惯量常量填充 A～E 五个 3×3 惯性张量。
 void initializeInertiaMatrices(Matrix3f& Ia, Matrix3f& Ib, Matrix3f& Ic, Matrix3f& Id, Matrix3f& Ie) {
     Ia << iaxx, -iaxy, -iaxz,
          -iaxy,  iayy, -iayz,
@@ -96,6 +98,7 @@ void initializeInertiaMatrices(Matrix3f& Ia, Matrix3f& Ib, Matrix3f& Ic, Matrix3
 }
 
 // 初始化旋转矩阵（严格对应MATLAB）
+// 按当前相对转角生成机体之间绕 x 轴的旋转矩阵；共享角度输入为度。
 void initializeRotationMatrices(Matrix3f& Eab, Matrix3f& Eac, Matrix3f& Ebd, Matrix3f& Ece) {
     float phiabrad=relativeAngle_ready*0.01745;
     float phiacrad=phiac*0.01745;
@@ -119,6 +122,7 @@ void initializeRotationMatrices(Matrix3f& Eab, Matrix3f& Eac, Matrix3f& Ebd, Mat
 }
 
 // 计算所有C矩阵（严格逐项对应MATLAB代码）
+// 按当前质量、惯量和机体转角计算 18×18 质量矩阵的各个 3×3 分块。
 void calculateCMatrices(Matrix3f& C11, Matrix3f& C12, Matrix3f& C13, Matrix3f& C14, 
                        Matrix3f& C15, Matrix3f& C16, Matrix3f& C21, Matrix3f& C22,
                        Matrix3f& C23, Matrix3f& C24, Matrix3f& C25, Matrix3f& C26,
@@ -323,6 +327,7 @@ void calculateCMatrices(Matrix3f& C11, Matrix3f& C12, Matrix3f& C13, Matrix3f& C
 }
 
 // 组装完整质量矩阵（严格对应MATLAB）
+// 把 C11～C66 分块组装成 18×18 质量矩阵，同时更新模块内的 M 并返回。
 MatrixXf assembleMassMatrix() {
     Matrix3f C11, C12, C13, C14, C15, C16;
     Matrix3f C21, C22, C23, C24, C25, C26;
@@ -358,6 +363,8 @@ MatrixXf assembleMassMatrix() {
     return M;
 }
 
+// 按重力和气动力计算广义力分量。
+// 当前实现使用局部同名 Qx，未更新模块共享 Qx；调用方依赖共享值时需核查。
 void getQx()
 {
   Eigen::Vector3f FAero(0, 0, -Mass * 9.8);
@@ -420,6 +427,7 @@ void getQx()
 
 
 
+// 根据当前构型求质量子矩阵与执行器映射，并计算用于混控的伪逆矩阵。
 void getpinvBplusmini() {
 
     MatrixXf M = assembleMassMatrix();
@@ -462,6 +470,7 @@ void getpinvBplusmini() {
 
 
 
+// 按行列打印 Eigen 矩阵，保留四位小数，供控制分配调试。
 void printFullMatrix(const MatrixXf& m) {
     
     Serial.println("==========================================");
@@ -493,6 +502,7 @@ void printFullMatrix(const MatrixXf& m) {
 
 
 // 优化的伪逆计算函数
+// 用奇异值分解求矩阵 Moore–Penrose 伪逆；小奇异值按容差置零。
 Eigen::MatrixXf pseudoInverse(const Eigen::MatrixXf &a) {
   Eigen::JacobiSVD<Eigen::MatrixXf> svd(a, Eigen::ComputeThinU | Eigen::ComputeThinV);
   
@@ -509,6 +519,7 @@ Eigen::MatrixXf pseudoInverse(const Eigen::MatrixXf &a) {
 }
 
 
+// 写入固定的执行器到广义力映射矩阵 H（35×20）。
 void initializeH()
 {
  // 按行初始化，所有数值保留1位小数
@@ -550,6 +561,7 @@ void initializeH()
 }
 
 
+// 从质量矩阵 M 选取控制所需的行列，形成 10×10 子矩阵 Mpi。
 void extractMpi()
  {
   Mp << M.row(0),   // 第1行 (MATLAB的M(1,:))
@@ -568,6 +580,8 @@ Mpi<< Mp.col(0),Mp.col(1),Mp.col(2),Mp.col(3),Mp.col(4),Mp.col(5),Mp.col(6),Mp.c
 }
 
 
+// 根据几何尺寸 y 和四个铰接角组装 10×35 执行器映射矩阵。
+// 角度输入单位为弧度；返回矩阵供实时控制分配使用。
 MatrixXf computeBeMatrix(float y, float phiab, float phiac, float phibd, float phice) {
     // 初始化所有子矩阵
     
@@ -581,7 +595,7 @@ MatrixXf computeBeMatrix(float y, float phiab, float phiac, float phibd, float p
           -y*sin(phiac)*1*1,0,0,y*sin(phiac),
           (y+y*cos(phiac))*1*1,0,0,-(y+y*cos(phiac));
 
-  // ===== 3. Compute BedT =====
+  // 计算 Bed 的转置矩阵。
   float c1 = cos(phiab)*sin(phibd) + cos(phibd)*sin(phiab);
   float c2 = cos(phiab)*cos(phibd) - sin(phiab)*sin(phibd);
   
@@ -590,7 +604,7 @@ MatrixXf computeBeMatrix(float y, float phiab, float phiac, float phibd, float p
           (y*c1 + 2*y*sin(phiab)),0,0,-(y*c1 + 2*y*sin(phiab)),
           -(y + y*c2 + 2*y*cos(phiab)),0,0,(y + y*c2 + 2*y*cos(phiab));
 
-  // ===== 4. Compute BeeT =====
+  // 计算 Bee 的转置矩阵。
   float c3 = cos(phiac)*sin(phice) + cos(phice)*sin(phiac);
   float c4 = cos(phiac)*cos(phice) - sin(phiac)*sin(phice);
   
@@ -672,6 +686,7 @@ MatrixXf computeBeMatrix(float y, float phiab, float phiac, float phibd, float p
     return Be;
 }
 
+// 上电时初始化各机惯性张量和固定映射矩阵 H。
 void initializeControlAllocation() {
     initializeInertiaMatrices(Ia, Ib, Ic, Id, Ie);
     initializeH();

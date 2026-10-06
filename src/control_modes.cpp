@@ -92,16 +92,15 @@ const float pwm_channel3_trim = 10;        // 减少是向上
 static int outputpwm1, outputpwm2, outputpwm3, outputpwm4, outputpwm5;
 
 
-// Radio failsafe values for every channel in the event that bad reciever data
-// is detected. Recommended defaults:
-static unsigned long channel_1_fs = 1500; // thro
-static unsigned long channel_2_fs = 1500; // ail
-static unsigned long channel_3_fs = 1000; // elev
-static unsigned long channel_4_fs = 1500; // rudd
-static unsigned long channel_5_fs = 1500; // gear, greater than 1500 = throttle cut
-static unsigned long channel_6_fs = 2000; // aux1
-static unsigned long channel_7_fs = 2000; // aux2
-static unsigned long channel_8_fs = 2000; // aux3
+// 遥控信号异常时写入各通道的安全 PWM 值（单位：μs）。
+static unsigned long channel_1_fs = 1500; // 滚转
+static unsigned long channel_2_fs = 1500; // 俯仰
+static unsigned long channel_3_fs = 1000; // 油门
+static unsigned long channel_4_fs = 1500; // 方向舵
+static unsigned long channel_5_fs = 1500; // 油门切断开关
+static unsigned long channel_6_fs = 2000; // 辅助通道 1
+static unsigned long channel_7_fs = 2000; // 辅助通道 2
+static unsigned long channel_8_fs = 2000; // 辅助通道 3
 
 static float Aail1_PWM_TRIM = 0.0; // 舵面微调
 static float Aail2_PWM_TRIM = 0;   // 舵面微调
@@ -116,7 +115,7 @@ static float Trim_pitch_angle = 8.0;
 #endif
 
 
-// Control Variables
+// 控制输出与各机指令状态。
 //  刹车
 float ailBrake_PWM = 0.0, flap2eleratio = 0.0;
 // A组控制变量
@@ -149,36 +148,33 @@ static int Local_ail1_PWM_last = 1520;
 static float relativeAngle_ready_prev;
 
 
-// Controller parameters (take note of defaults before modifying!):
-
-// Clp increase
+// 控制器增益与限幅参数；修改后需重新验证闭环响应。
+// 注意：积分清零条件检查 channel_1_pwm，而 getDesState() 将通道 1 映射为滚转；
+// 若原意是低油门清零，需核对接收机通道映射后再修改判断条件。
+// 等效滚转阻尼补偿。
 int Ail_Clp;
 static float Clp_PID = 0.0;
 static float k_Clp = 0.05;
 
 static float i_limit =
-    45.0; // Integrator saturation level, mostly for safety (default 25.0)
+    45.0; // 积分项限幅，防止长时间误差导致指令过大。
 static float i_valid = 0.0;   // 积分是否起作用
-static float maxRoll = 80.0;  // Max roll angle in degrees for angle mode (maximum ~70
-                       // degrees), deg/sec for rate mode
-static float maxPitch = 60.0; // Max pitch angle in degrees for angle mode (maximum ~70
-                       // degrees), deg/sec for rate mode
-static float maxYaw = 160.0;  // Max yaw rate in deg/sec
+static float maxRoll = 80.0;  // 最大滚转期望；角度模式为 °，角速度模式为 °/s。
+static float maxPitch = 60.0; // 最大俯仰期望；单位随控制模式变化。
+static float maxYaw = 160.0;  // 最大偏航角速度期望，单位 °/s。
 
 static float kp_rotate = 0.4;
-static float Kp_roll_angle = 0.25; // Roll P-gain - angle mode
-static float Ki_roll_angle = 0.0;  // Roll I-gain - angle mode 0.08
+static float Kp_roll_angle = 0.25; // 滚转角比例增益。
+static float Ki_roll_angle = 0.0;  // 滚转角积分增益。
 static float Kd_roll_angle =
-    0.0; // Roll D-gain - angle mode (has no effect on controlANGLE2)
-static float B_loop_roll = 1.0; // Roll damping term for controlANGLE2(), lower is more
-                         // damping (must be between 0 to 1)
-static float Kp_pitch_angle = 0.12; // Pitch P-gain - angle mode
-static float Ki_pitch_angle = 0.0;  // Pitch I-gain - angle mode 0.1
+    0.0; // 滚转角微分增益；controlANGLE2() 不使用该参数。
+static float B_loop_roll = 1.0; // 滚转外环阻尼系数，范围 0～1。
+static float Kp_pitch_angle = 0.12; // 俯仰角比例增益。
+static float Ki_pitch_angle = 0.0;  // 俯仰角积分增益。
 static float Kd_pitch_angle =
-    0.00; // Pitch D-gain - angle mode (has no effect on controlANGLE2)
-static float B_loop_pitch = 1.0; // Pitch damping term for controlANGLE2(), lower is
-                          // more damping (must be between 0 to 1)
-static float Kp_Flap = 0.2;      // Flap
+    0.00; // 俯仰角微分增益；controlANGLE2() 不使用该参数。
+static float B_loop_pitch = 1.0; // 俯仰外环阻尼系数，范围 0～1。
+static float Kp_Flap = 0.2;      // 襟翼角度比例增益。
 static float B_loop_FLAP = 0.0;
 static float dw4, dw6, dw7, dw10, dw13, dw16, dw19, dw22;
 
@@ -206,17 +202,15 @@ float indi_pitch_delta_e_cmd_deg_log = 0.0f; // INDI目标舵偏角
 float indi_pitch_delta_e_est_deg_log = 0.0f; // INDI估计的实际舵偏角
 float indi_pitch_pwm_cmd_log = 0.0f;         // INDI输出PWM
 #if defined SINGLE
-static float Kp_roll_rate = 0.045; // Roll P-gain - rate mode 0.06单机
-static float Ki_roll_rate = 0.010; // Roll I-gain - rate mode 0.01单机
+static float Kp_roll_rate = 0.045; // 滚转角速度比例增益。
+static float Ki_roll_rate = 0.010; // 滚转角速度积分增益。
 static float Kd_roll_rate =
-    0.0000; // Roll D-gain - rate mode (be careful when increasing too high,
-            // motors will begin to overheat!)
-static float Kp_pitch_rate = 0.09; // Pitch P-gain - rate mode 0.12
-static float Ki_pitch_rate = 0.11; // Pitch I-gain - rate mode 0.25
+    0.0000; // 滚转角速度微分增益；增大前应检查输出噪声。
+static float Kp_pitch_rate = 0.09; // 俯仰角速度比例增益。
+static float Ki_pitch_rate = 0.11; // 俯仰角速度积分增益。
 static float Kd_pitch_rate =
-    0.0000; // Pitch D-gain - rate mode (be careful when increasing too high,
-            // motors will begin to overheat!)
-static float Kff_roll_rate = 0.15;  // Roll FF-gain - rate mode 0.15单机
+    0.0000; // 俯仰角速度微分增益；增大前应检查输出噪声。
+static float Kff_roll_rate = 0.15;  // 滚转角速度前馈增益。
 static float Kff_pitch_rate = 0.20; // 0.2单机
 static float Kff_yaw_rate = 0.03;
 static float Kff_FLAP_RATE = 0.09;
@@ -225,17 +219,15 @@ static float Ki_FLAP_RATE = 0.12;
 
 #elif defined TEAM
 
-static float Kp_roll_rate = 0.15; // Roll P-gain - rate mode 0.06单机
-static float Ki_roll_rate = 0.1;  // Roll I-gain - rate mode 0.02单机
+static float Kp_roll_rate = 0.15; // 滚转角速度比例增益。
+static float Ki_roll_rate = 0.1;  // 滚转角速度积分增益。
 static float Kd_roll_rate =
-    0.0002; // Roll D-gain - rate mode (be careful when increasing too high,
-            // motors will begin to overheat!)
-static float Kp_pitch_rate = 0.11; // Pitch P-gain - rate mode
-static float Ki_pitch_rate = 0.10; // Pitch I-gain - rate mode 0.25
+    0.0002; // 滚转角速度微分增益；增大前应检查输出噪声。
+static float Kp_pitch_rate = 0.11; // 俯仰角速度比例增益。
+static float Ki_pitch_rate = 0.10; // 俯仰角速度积分增益。
 static float Kd_pitch_rate =
-    0.000; // 0.0002 Pitch D-gain - rate mode (be careful when increasing too
-           // high, motors will begin to overheat!)
-static float Kff_roll_rate = 0.12; // Roll FF-gain - rate mode 0.15单机
+    0.000; // 俯仰角速度微分增益；当前设为零。
+static float Kff_roll_rate = 0.12; // 滚转角速度前馈增益。
 static float Kff_pitch_rate = 0.20;
 static float Kff_yaw_rate = 0.03;
 static float Kff_FLAP_RATE = 0.1;
@@ -246,10 +238,9 @@ static float Ki_FLAP_RATE = 0.20; // 0.15
 
 float roll_eq;
 
-static float Kp_yaw = 0.2;     // Yaw P-gain
-static float Ki_yaw = 0.05;    // Yaw I-gain
-static float Kd_yaw = 0.00000; // Yaw D-gain (be careful when increasing too high,
-                        // motors will begin to overheat!)
+static float Kp_yaw = 0.2;     // 偏航角速度比例增益。
+static float Ki_yaw = 0.05;    // 偏航角速度积分增益。
+static float Kd_yaw = 0.00000; // 偏航角速度微分增益；当前设为零。
 
 
 static float roll_IMU_prev, pitch_IMU_prev;
@@ -260,7 +251,7 @@ static const float roll_pid_lpf_fc = 7.0f; // 7hz指令滤波
 static const float TWO_PI_F = 6.28318530718f;
 
 
-// Normalized desired state:
+// 遥控输入映射后的归一化期望状态。
 float thro_des, roll_des, pitch_des, yaw_des, rotate_speed_des, pitch_des_local;
 static float thro_des_RAW, roll_des_RAW, pitch_des_RAW, yaw_des_RAW;
 static float roll_passthru, pitch_passthru, yaw_passthru;
@@ -268,7 +259,7 @@ static float pitch_des_local_last;
 static float pitch_des_local_rate;
 static float pitch_des_local_rate_lpf_fc = 5.0f;
 
-// Controller:
+// 控制器误差、积分及输出状态。
 float error_roll, error_roll_prev, roll_des_prev, integral_roll,
     integral_roll_il, integral_roll_ol, integral_roll_prev,
     integral_roll_prev_il, integral_roll_prev_ol, derivative_roll, roll_PID = 0;
@@ -316,7 +307,7 @@ float error_Phieg, Phieg_des = 0, Phieg_Mea, integral_Phieg_ol,
 float phiab, phiac, phibd, phice, phidf, phieg; // 直接传入的。FDBACEG
 float Pab, Pac, Pbd, Pdf, Pce, Peg;
 
-// Mixer
+// 混控后的归一化执行器指令。
 static float m1_command_scaled, m2_command_scaled, m3_command_scaled,
     m4_command_scaled, m5_command_scaled, m6_command_scaled;
 int m1_command_PWM, m2_command_PWM, m3_command_PWM, m4_command_PWM,
@@ -332,36 +323,16 @@ static float Gail1_scaled, Gail2_scaled, Gele_scaled, Gthro_scaled, Grudd_scaled
 
 int s6_command_PWM, s7_command_PWM;
 
-// Flight status
+// 飞行解锁状态。
 static bool armedFly = false;
 
 float central_pitch = 0.0f;
 static const uint8_t num_DSM_channels = 6;
 
+// 按单机或编队构型，把手动指令或姿态控制量映射到各机归一化舵量。
 void controlMixer() {
-  // DESCRIPTION: Mixes scaled commands from PID controller to actuator outputs
-  // based on vehicle configuration
-  /*
-   * Takes roll_PID, pitch_PID, and yaw_PID computed from the PID controller and
-   * appropriately mixes them for the desired vehicle configuration. For example
-   * on a quadcopter, the left two motors should have +roll_PID while the right
-   * two motors should have -roll_PID. Front two should have -pitch_PID and the
-   * back two should have +pitch_PID etc... every motor has normalized (0 to 1)
-   * thro_des command for throttle control. Can also apply direct unstabilized
-   * commands from the transmitter with roll_passthru, pitch_passthru, and
-   * yaw_passthu. mX_command_scaled and sX_command scaled variables are used in
-   * scaleCommands() in preparation to be sent to the motor ESCs and servos.
-   *
-   *Relevant variables:
-   *thro_des - direct thottle control
-   *roll_PID, pitch_PID, yaw_PID - stabilized axis variables
-   *roll_passthru, pitch_passthru, yaw_passthru - direct unstabilized command
-   * passthrough channel_6_pwm - free auxillary channel, can be used to toggle
-   * things with an 'if' statement
-   */
-
-  // 0.5 is centered servo, 0.0 is zero throttle if connecting to ESC for
-  // conventional PWM, 1.0 is max throttle
+  // 按单机或编队构型，将姿态控制量分配到各机舵面和油门。
+  // 手动模式直接使用归一化遥控指令；舵机归一化中位为 0.5，油门范围为 0～1。
 
   if (currentMode == MANUAL_MODE) {
     roll_PID = roll_des_RAW / 2.0;
@@ -1027,26 +998,19 @@ central_pitch=-45.0*coeroll*roll_PID;
   s7_command_scaled = 0;
 }
 
+// 根据遥控通道 5 与通道 1 的阈值设置解锁标志；当前通道映射需与实际接线核对。
 void armedStatus() {
-  // DESCRIPTION: Check if the throttle cut is off and the throttle input is low
-  // to prepare for flight.
+  // 通道 5 低于 1500 μs 且通道 1 低于 1050 μs 时标记为已解锁。
+  // 当前映射下通道 1 是滚转；若本意是低油门解锁，需核对该判断条件。
   if ((channel_5_pwm < 1500) && (channel_1_pwm < 1050)) {
     armedFly = true;
   }
 }
 
+// 将遥控 PWM 归一化并限幅，生成油门、姿态角和角速度期望及手动直通量。
 void getDesState() { // 调整了通道顺序
-  // DESCRIPTION: Normalizes desired control values to appropriate values
-  /*
-   * Updates the desired state variables thro_des, roll_des, pitch_des, and
-   * yaw_des. These are computed by using the raw RC pwm commands and scaling
-   * them to be within our limits defined in setup. thro_des stays within 0 to 1
-   * range. roll_des and pitch_des are scaled to be within max roll/pitch amount
-   * in either degrees (angle mode) or degrees/sec (rate mode). yaw_des is
-   * scaled to be within max yaw in degrees/sec. Also creates roll_passthru,
-   * pitch_passthru, and yaw_passthru variables, to be used in commanding
-   * motors/servos with direct unstabilized commands in controlMixer().
-   */
+  // 将接收机 PWM 映射为油门、姿态角和角速度期望值，并限制在配置范围内。
+  // RAW 与 passthru 变量保留未增稳的归一化输入，供手动混控使用。
   float GyroZ;
 #if defined USE_MPU6050_I2C
   GyroZ = GyroZ_6050;
@@ -1057,10 +1021,10 @@ void getDesState() { // 调整了通道顺序
 
 #if defined APLANE // 是主机
   {
-    thro_des_RAW = (channel_3_pwm - 1100.0) / 1000.0; // Between 0 and 1
-    roll_des_RAW = (channel_1_pwm - 1520.0) / 500.0;  // Between -1 and 1
-    pitch_des_RAW = (channel_2_pwm - 1520.0) / 500.0; // Between -1 and 1
-    yaw_des_RAW = (channel_4_pwm - 1520.0) / 500.0;   // Between -1 and 1
+    thro_des_RAW = (channel_3_pwm - 1100.0) / 1000.0; // 范围 0～1。
+    roll_des_RAW = (channel_1_pwm - 1520.0) / 500.0;  // 范围 -1～1。
+    pitch_des_RAW = (channel_2_pwm - 1520.0) / 500.0; // 范围 -1～1。
+    yaw_des_RAW = (channel_4_pwm - 1520.0) / 500.0;   // 范围 -1～1。
 
     /*
     if (channel_6_pwm>1600) //水平构型
@@ -1099,25 +1063,23 @@ void getDesState() { // 调整了通道顺序
      Phieg_des=0.02*Phieg_des_nf+(1-0.02)*Phieg_des;
     */
 
-    roll_passthru = roll_des_RAW / 2.0;   // Between -0.5 and 0.5
-    pitch_passthru = pitch_des_RAW / 2.0; // Between -0.5 and 0.5
-    yaw_passthru = yaw_des_RAW / 2.0;     // Between -0.5 and 0.5
+    roll_passthru = roll_des_RAW / 2.0;   // 范围 -0.5～0.5。
+    pitch_passthru = pitch_des_RAW / 2.0; // 范围 -0.5～0.5。
+    yaw_passthru = yaw_des_RAW / 2.0;     // 范围 -0.5～0.5。
 
-    // Constrain within normalized bounds
-    thro_des = constrain(thro_des_RAW, 0.0, 1.0); // Between 0 and 1
+    // 将各轴指令限制在归一化或配置的最大范围内。
+    thro_des = constrain(thro_des_RAW, 0.0, 1.0); // 范围 0～1。
     roll_des = constrain(roll_des_RAW, -1.0, 1.0) *
-               maxRoll; // Between -maxRoll and +maxRoll
+               maxRoll; // 范围为 ±maxRoll。
     pitch_des_local = constrain(pitch_des_RAW, -1.0, 1.0) *
-                      maxPitch; // Between -maxPitch and +maxPitch
+                      maxPitch; // 范围为 ±maxPitch。
     yaw_des = constrain(yaw_des_RAW, -1.0, 1.0) *
-              maxYaw; // Between -maxYaw and +maxYaw
+              maxYaw; // 范围为 ±maxYaw。
     roll_passthru = constrain(roll_passthru, -0.5, 0.5);
     pitch_passthru = constrain(pitch_passthru, -0.5, 0.5);
     yaw_passthru = constrain(yaw_passthru, -0.5, 0.5);
 
-    // Phiab_des=constrain(Phiab_des, -1.0, 1.0)*15.0; //Between -maxRoll and
-    // +maxRoll Phiac_des=constrain(Phiac_des, -1.0, 1.0)*-15.0; //Between
-    // -maxRoll and +maxRoll
+    // Phiab_des=constrain(Phiab_des, -1.0, 1.0)*15.0; // 历史试验方案已停用。
 
     pitch_des_local += Trim_pitch_angle;
 
@@ -1169,23 +1131,10 @@ void getDesState() { // 调整了通道顺序
 #endif
 }
 
+// 单环控制：滚转、俯仰使用角度误差，偏航使用陀螺仪角速度误差。
 void controlANGLE() {
-  // DESCRIPTION: Computes control commands based on state error (angle)
-  /*
-   * Basic PID control to stablize on angle setpoint based on desired states
-   * roll_des, pitch_des, and yaw_des computed in getDesState(). Error is simply
-   * the desired state minus the actual state (ex. roll_des - roll_IMU). Two
-   * safety features are implimented here regarding the I terms. The I terms are
-   * saturated within specified limits on startup to prevent excessive buildup.
-   * This can be seen by holding the vehicle at an angle and seeing the motors
-   * ramp up on one side until they've maxed out throttle...saturating I to a
-   * specified limit fixes this. The second feature defaults the I terms to 0 if
-   * the throttle is at the minimum setting. This means the motors will not
-   * start spooling up on the ground, and the I terms will always start from 0
-   * on takeoff. This function updates the variables roll_PID, pitch_PID, and
-   * yaw_PID which can be thought of as 1-D stablized signals. They are mixed to
-   * the configuration of the vehicle in controlMixer().
-   */
+  // 单环姿态 PID：用期望角与测量角之差计算滚转、俯仰控制量。
+  // 积分项限幅；通道 1 低于阈值时清零，输出供 controlMixer() 分配。
   float GyroZ;
   float GyroY;
   float GyroX;
@@ -1205,41 +1154,41 @@ void controlANGLE() {
   rotate_error = constrain(rotate_error, -100, 100); // 100度每秒
   // thro_des=0.01*kp_rotate*rotate_error;//0-1
 
-  // Roll
+  // 滚转通道。
   error_roll = roll_des - roll_IMU;
   integral_roll = integral_roll_prev + error_roll * dt;
   if (channel_3_pwm <
-      1160) { // Don't let integrator build if throttle is too low
+      1160) { // 通道 1 低于阈值时清零积分项。
     integral_roll = 0;
   }
   integral_roll =
       constrain(integral_roll, -i_limit,
-                i_limit); // Saturate integrator to prevent unsafe buildup
+                i_limit); // 对积分项限幅，防止持续饱和。
   derivative_roll = GyroX;
   roll_PID =
       0.01 *
       (Kp_roll_angle * error_roll + Ki_roll_angle * integral_roll -
        Kd_roll_angle *
-           derivative_roll); // Scaled by .01 to bring within -1 to 1 range
+           derivative_roll); // 按控制器约定缩放输出量。
 
-  // Pitch
+  // 俯仰通道。
   error_pitch = pitch_des - pitch_IMU;
   integral_pitch = integral_pitch_prev + error_pitch * dt;
   if (channel_3_pwm <
-      1160) { // Don't let integrator build if throttle is too low
+      1160) { // 通道 1 低于阈值时清零积分项。
     integral_pitch = 0;
   }
   integral_pitch =
       constrain(integral_pitch, -i_limit,
-                i_limit); // Saturate integrator to prevent unsafe buildup
+                i_limit); // 对积分项限幅，防止持续饱和。
   derivative_pitch = GyroY;
   pitch_PID =
       .01 *
       (Kp_pitch_angle * error_pitch + Ki_pitch_angle * integral_pitch -
        Kd_pitch_angle *
-           derivative_pitch); // Scaled by .01 to bring within -1 to 1 range
+           derivative_pitch); // 按控制器约定缩放输出量。
 
-  // Yaw, stablize on rate from GyroZ
+  // 偏航通道使用 Z 轴角速度反馈。
 
   // yaw_des=yaw_des;
   error_yaw =
@@ -1248,27 +1197,28 @@ void controlANGLE() {
       GyroZ;
   integral_yaw = integral_yaw_prev + error_yaw * dt;
   if (channel_3_pwm <
-      1160) { // Don't let integrator build if throttle is too low
+      1160) { // 通道 1 低于阈值时清零积分项。
     integral_yaw = 0;
   }
   integral_yaw =
       constrain(integral_yaw, -i_limit,
-                i_limit); // Saturate integrator to prevent unsafe buildup
+                i_limit); // 对积分项限幅，防止持续饱和。
   derivative_yaw = (error_yaw - error_yaw_prev) / dt;
   yaw_PID =
       .01 *
       (Kp_yaw * error_yaw + Ki_yaw * integral_yaw +
-       Kd_yaw * derivative_yaw); // Scaled by .01 to bring within -1 to 1 range
+       Kd_yaw * derivative_yaw); // 按控制器约定缩放输出量。
 
-  // Update roll variables
+  // 保存滚转状态，供下一周期计算。
   integral_roll_prev = integral_roll;
-  // Update pitch variables
+  // 保存俯仰状态，供下一周期计算。
   integral_pitch_prev = integral_pitch;
-  // Update yaw variables
+  // 保存偏航状态，供下一周期计算。
   error_yaw_prev = error_yaw;
   integral_yaw_prev = integral_yaw;
 }
 
+// 用当前滚转角速度生成等效滚转阻尼补偿，并换算为副翼 PWM 修正量。
 void increase_Clp() {
   float GyroX;
 #if defined EXTIMU
@@ -1284,14 +1234,9 @@ void increase_Clp() {
   Ail_Clp = Clp_PID * 125.0;
 }
 
+// 串级姿态控制：外环产生角速度目标，内环 PID 生成舵面控制量。
 void controlANGLE2() {
-  // DESCRIPTION: Computes control commands based on state error (angle) in
-  // cascaded scheme
-  /*
-   * Gives better performance than controlANGLE() but requires much more tuning.
-   * Not reccommended for first-time setup. See the documentation for tuning
-   * this controller.
-   */
+  // 串级姿态控制：外环角度误差生成角速度期望，内环跟踪角速度。
   float GyroZ;
   float GyroY;
   float GyroX;
@@ -1323,9 +1268,9 @@ void controlANGLE2() {
   yaw_IMU = yaw_IMU_EXT;
 #endif
 
-  // Outer loop - PID on angle
+  // 外环：角度误差生成角速度期望。
   float roll_des_ol, pitch_des_ol;
-// Roll
+// 滚转通道。
 #if defined SINGLE
   roll_eq = roll_IMU;
 #else
@@ -1375,12 +1320,12 @@ void controlANGLE2() {
   error_roll = roll_des - roll_eq;
   integral_roll_ol = integral_roll_prev_ol + error_roll * dt; // I
   if (channel_1_pwm <
-      1060) { // Don't let integrator build if throttle is too low
+      1060) { // 通道 1 低于阈值时清零积分项。
     integral_roll_ol = 0;
   }
   integral_roll_ol =
       constrain(integral_roll_ol, -i_limit,
-                i_limit); // Saturate integrator to prevent unsafe buildup
+                i_limit); // 对积分项限幅，防止持续饱和。
   if (ModeChange == 1) {
     integral_roll_ol = 0;
   }
@@ -1389,7 +1334,7 @@ void controlANGLE2() {
                 i_valid * Ki_roll_angle *
                     integral_roll_ol; // - Kd_roll_angle*derivative_roll;
 
-  // Pitch
+  // 俯仰通道。
   // Serial.println(pitch_des_local);
 
 #if defined APLANE
@@ -1408,7 +1353,7 @@ void controlANGLE2() {
   // error_pitch = pitch_des_local - pitch_IMU;
   integral_pitch_ol = integral_pitch_prev_ol + error_pitch * dt;
   if (channel_1_pwm <
-      1060) { // Don't let integrator build if throttle is too low
+      1060) { // 通道 1 低于阈值时清零积分项。
     integral_pitch_ol = 0;
   }
   integral_pitch_ol =
@@ -1422,7 +1367,7 @@ void controlANGLE2() {
                  i_valid * Ki_pitch_angle *
                      integral_pitch_ol; // - Kd_pitch_angle*derivative_pitch;
 
-  // Apply loop gain, constrain, and LP filter for artificial damping
+  // 对外环指令限幅并低通，抑制相邻机体运动振荡。
   float Kl = 30.0;
   roll_des_ol = Kl * roll_des_ol;
   pitch_des_ol = Kl * pitch_des_ol;
@@ -1434,13 +1379,13 @@ void controlANGLE2() {
   pitch_des_ol =
       (1.0 - B_loop_pitch) * pitch_des_prev + B_loop_pitch * pitch_des_ol;
 
-  // Inner loop - PID on rate
-  // Roll
+  // 内环：角速度误差 PID。
+  // 滚转通道。
   float Rollrate;
 #if defined SINGLE
   Rollrate = GyroX;
 #else
-// Rollrate=(GYRO_X_B+GyroX)/2.0;
+// 历史方案：可将相邻机体角速度用于等效滚转角速度估计。
 #if defined THREEPLANE
   Rollrate = (GYRO_X_B + GYRO_X_C + GyroX) / 3.0;
 #elif defined FIVEPLANE
@@ -1458,12 +1403,12 @@ void controlANGLE2() {
   error_roll = roll_des_ol - Rollrate;
   integral_roll_il = integral_roll_prev_il + error_roll * dt;
   if (channel_1_pwm <
-      1060) { // Don't let integrator build if throttle is too low
+      1060) { // 通道 1 低于阈值时清零积分项。
     integral_roll_il = 0;
   }
   integral_roll_il =
       constrain(integral_roll_il, -i_limit,
-                i_limit); // Saturate integrator to prevent unsafe buildup
+                i_limit); // 对积分项限幅，防止持续饱和。
   if (ModeChange == 1) {
     integral_roll_il = 0;
   }
@@ -1473,7 +1418,7 @@ void controlANGLE2() {
       (Kff_roll_rate * roll_des_ol + Kp_roll_rate * error_roll +
        i_valid * Ki_roll_rate * integral_roll_il +
        Kd_roll_rate *
-           derivative_roll); // Scaled by .01 to bring within -1 to 1 range
+           derivative_roll); // 按控制器约定缩放输出量。
 
   float tau_roll_pid = 1.0f / (6.28f * roll_pid_lpf_fc);
   float alpha_roll_pid = dt / (tau_roll_pid + dt);
@@ -1505,16 +1450,16 @@ void controlANGLE2() {
 
   // Serial.println(roll_PID_dot_lpf);
 
-  // Pitch
+  // 俯仰通道。
   error_pitch = pitch_des_ol - GyroY;
   integral_pitch_il = integral_pitch_prev_il + error_pitch * dt;
   if (channel_1_pwm <
-      1060) { // Don't let integrator build if throttle is too low
+      1060) { // 通道 1 低于阈值时清零积分项。
     integral_pitch_il = 0;
   }
   integral_pitch_il =
       constrain(integral_pitch_il, -i_limit,
-                i_limit); // Saturate integrator to prevent unsafe buildup
+                i_limit); // 对积分项限幅，防止持续饱和。
   if (ModeChange == 1) {
     integral_pitch_il = 0;
   }
@@ -1524,21 +1469,21 @@ void controlANGLE2() {
       (Kff_pitch_rate * pitch_des_ol + Kp_pitch_rate * error_pitch +
        i_valid * Ki_pitch_rate * integral_pitch_il +
        Kd_pitch_rate *
-           derivative_pitch); // Scaled by .01 to bring within -1 to 1 range
+           derivative_pitch); // 按控制器约定缩放输出量。
   // Serial.println(integral_pitch_il);
-  // Yaw
+  // 偏航通道。
   error_yaw =
       yaw_des -
       57.3 * (9.8 / V_cruise * tan(roll_des / 57.3) * cos(pitch_des / 57.3)) -
       GyroZ;
   integral_yaw = integral_yaw_prev + error_yaw * dt;
   if (channel_1_pwm <
-      1060) { // Don't let integrator build if throttle is too low
+      1060) { // 通道 1 低于阈值时清零积分项。
     integral_yaw = 0;
   }
   integral_yaw =
       constrain(integral_yaw, -i_limit,
-                i_limit); // Saturate integrator to prevent unsafe buildup
+                i_limit); // 对积分项限幅，防止持续饱和。
   if (ModeChange == 1) {
     integral_yaw = 0;
   }
@@ -1548,31 +1493,28 @@ void controlANGLE2() {
       (Kff_yaw_rate * (yaw_des - 57.3 * (9.8 / V_cruise * tan(roll_des / 57.3) *
                                          cos(pitch_des / 57.3))) +
        Kp_yaw * error_yaw + Ki_yaw * integral_yaw +
-       Kd_yaw * derivative_yaw); // Scaled by .01 to bring within -1 to 1 range
+       Kd_yaw * derivative_yaw); // 按控制器约定缩放输出量。
 
-  // Update roll variables
+  // 保存滚转状态，供下一周期计算。
   integral_roll_prev_ol = integral_roll_ol;
   integral_roll_prev_il = integral_roll_il;
   error_roll_prev = error_roll;
   roll_IMU_prev = roll_IMU;
   roll_des_prev = roll_des_ol;
-  // Update pitch variables
+  // 保存俯仰状态，供下一周期计算。
   integral_pitch_prev_ol = integral_pitch_ol;
   integral_pitch_prev_il = integral_pitch_il;
   error_pitch_prev = error_pitch;
   pitch_IMU_prev = pitch_IMU;
   pitch_des_prev = pitch_des_ol;
-  // Update yaw variables
+  // 保存偏航状态，供下一周期计算。
   error_yaw_prev = error_yaw;
   integral_yaw_prev = integral_yaw;
 }
 
+// 角速度模式 PID：用期望角速度和陀螺仪读数计算三轴控制量。
 void controlRATE() {
-  // DESCRIPTION: Computes control commands based on state error (rate)
-  /*
-   * See explanation for controlANGLE(). Everything is the same here except the
-   * error is now the desired rate - raw gyro reading.
-   */
+  // 角速度模式：以期望角速度与陀螺仪读数之差计算控制量。
 
   float GyroZ;
   float GyroY;
@@ -1593,69 +1535,71 @@ void controlRATE() {
   GyroZ = Gyro_Z_EXT;
 #endif
 
-  // Roll
+  // 滚转通道。
   error_roll = roll_des * 3.0 - GyroX;
   integral_roll = integral_roll_prev + error_roll * dt;
   if (channel_1_pwm <
-      1060) { // Don't let integrator build if throttle is too low
+      1060) { // 通道 1 低于阈值时清零积分项。
     integral_roll = 0;
   }
   integral_roll =
       constrain(integral_roll, -i_limit,
-                i_limit); // Saturate integrator to prevent unsafe buildup
+                i_limit); // 对积分项限幅，防止持续饱和。
   derivative_roll = (error_roll - error_roll_prev) / dt;
   roll_PID =
       .01 *
       (Kff_roll_rate * roll_des + Kp_roll_rate * error_roll +
        Kd_roll_rate *
-           derivative_roll); // Scaled by .01 to bring within -1 to 1 range
+           derivative_roll); // 按控制器约定缩放输出量。
 
-  // Pitch
+  // 俯仰通道。
   error_pitch = pitch_des_local * 3.0 - GyroY;
   integral_pitch = integral_pitch_prev + error_pitch * dt;
   if (channel_1_pwm <
-      1060) { // Don't let integrator build if throttle is too low
+      1060) { // 通道 1 低于阈值时清零积分项。
     integral_pitch = 0;
   }
   integral_pitch =
       constrain(integral_pitch, -i_limit,
-                i_limit); // Saturate integrator to prevent unsafe buildup
+                i_limit); // 对积分项限幅，防止持续饱和。
   derivative_pitch = (error_pitch - error_pitch_prev) / dt;
   pitch_PID =
       .01 *
       (Kff_pitch_rate * pitch_des + Kp_pitch_rate * error_pitch +
        Kd_pitch_rate *
-           derivative_pitch); // Scaled by .01 to bring within -1 to 1 range
+           derivative_pitch); // 按控制器约定缩放输出量。
 
-  // Yaw, stablize on rate from GyroZ
+  // 偏航通道使用 Z 轴角速度反馈。
   error_yaw = yaw_des * 3.0 - GyroZ;
   integral_yaw = integral_yaw_prev + error_yaw * dt;
   if (channel_1_pwm <
-      1060) { // Don't let integrator build if throttle is too low
+      1060) { // 通道 1 低于阈值时清零积分项。
     integral_yaw = 0;
   }
   integral_yaw =
       constrain(integral_yaw, -i_limit,
-                i_limit); // Saturate integrator to prevent unsafe buildup
+                i_limit); // 对积分项限幅，防止持续饱和。
   derivative_yaw = (error_yaw - error_yaw_prev) / dt;
   yaw_PID =
       .01 *
       (Kff_yaw_rate * yaw_des + Kp_yaw * error_yaw + Ki_yaw * integral_yaw +
-       Kd_yaw * derivative_yaw); // Scaled by .01 to bring within -1 to 1 range
+       Kd_yaw * derivative_yaw); // 按控制器约定缩放输出量。
 
-  // Update roll variables
+  // 保存滚转状态，供下一周期计算。
   error_roll_prev = error_roll;
   integral_roll_prev = integral_roll;
   // GyroX_prev = GyroX;//这行有什么用啊 似乎没用 而且不会干扰getimudata吗
-  // Update pitch variables
+  // 保存俯仰状态，供下一周期计算。
   error_pitch_prev = error_pitch;
   integral_pitch_prev = integral_pitch;
   // GyroY_prev = GyroY;//这行有什么用啊 似乎没用 而且不会干扰getimudata吗
-  // Update yaw variables
+  // 保存偏航状态，供下一周期计算。
   error_yaw_prev = error_yaw;
   integral_yaw_prev = integral_yaw;
 }
 
+// 使用俯仰角速度、角加速度和升降舵舵效计算 INDI 升降舵指令。
+// 返回值为经限幅后的 PWM 微秒数；函数维护独立滤波与舵机估计状态。
 int PITCH_INDI_control() {
   // 1. 读取当前俯仰角速度原始值。
   // 这里先只统一到当前工程已经在用的角速度定义，不改变原有轴系约定。
@@ -1850,19 +1794,10 @@ int PITCH_INDI_control() {
   return (int)(pwm_cmd + 0.5f);
 }
 
+// 将各机归一化舵量换算为以 1520 μs 为中位的 PWM，并施加行程限幅。
 void scaleCommands() {
-  // DESCRIPTION: Scale normalized actuator commands to values for ESC/Servo
-  // protocol
-  /*
-   * mX_command_scaled variables from the mixer function are scaled to 125-250us
-   * for OneShot125 protocol. sX_command_scaled variables from the mixer
-   * function are scaled to 0-180 for the servo library using standard PWM.
-   * mX_command_PWM are updated here which are used to command the motors in
-   * commandMotors(). sX_command_PWM are updated which are used to command the
-   * servos.
-   */
-
-  // Scaled to 1100-1940  mid 1520 for servo library
+  // 将混控后的归一化舵量换算为 PWM，舵机中位为 1520 μs。
+  // 对输出做行程限幅，避免超过执行器允许范围。
   Aail1_PWM = 1520 + 1000 * (Aail1_scaled);
   Aail2_PWM = 1520 + 1000 * (Aail2_scaled);
   Aele_PWM = 1520 + 1000 * (Aele_scaled);
@@ -1913,7 +1848,7 @@ void scaleCommands() {
 
   s6_command_PWM = s6_command_scaled * 180;
   s7_command_PWM = s7_command_scaled * 180;
-  // Constrain commands to servos within servo library bounds
+  // 限制 PWM 指令在舵机允许行程内。
   Aail1_PWM = constrain(Aail1_PWM, 1100, 1920);
   Aail2_PWM = constrain(Aail2_PWM, 1100, 1920);
   Aele_PWM = constrain(Aele_PWM, 1100, 1920); // 贵的飞机限幅
@@ -1923,18 +1858,10 @@ void scaleCommands() {
   s7_command_PWM = constrain(s7_command_PWM, 0, 180);
 }
 
+// 按接收机类型读取各遥控通道并进行低通；更新的值供下一控制周期使用。
 void getCommands() {
-  // DESCRIPTION: Get raw PWM values for every channel from the radio
-  /*
-   * Updates radio PWM commands in loop based on current available commands.
-   * channel_x_pwm is the raw command used in the rest of the loop. If using a
-   * PWM or PPM receiver, the radio commands are retrieved from a function in
-   * the readPWM file separate from this one which is running a bunch of
-   * interrupts to continuously update the radio readings. If using an SBUS
-   * receiver, the alues are pulled from the SBUS library directly. The raw
-   * radio commands are filtered with a first order low-pass filter to eliminate
-   * any really high frequency noise.
-   */
+  // 读取当前接收机通道；PWM/PPM 由中断更新，SBUS 由库解析。
+  // 对关键通道做一阶低通后，供下一次控制周期使用。
 
 #if defined USE_PPM_RX || defined USE_PWM_RX
   channel_1_pwm = getRadioPWM(1);
@@ -1946,7 +1873,7 @@ void getCommands() {
 
 #elif defined USE_SBUS_RX
   if (sbus.read(&sbusChannels[0], &sbusFailSafe, &sbusLostFrame)) {
-    // sBus scaling below is for Taranis-Plus and X4R-SB
+    // 以下比例换算对应 Taranis-Plus 与 X4R-SB 的 SBUS 输出范围。
     float scale = 0.615;
     float bias = 895.0;
     channel_1_pwm = sbusChannels[0] * scale + bias;
@@ -1975,8 +1902,8 @@ void getCommands() {
   }
 #endif
 
-  // Low-pass the critical commands and update previous values
-  float b = 0.7; // Lower=slower, higher=noiser
+  // 对关键遥控通道做一阶低通，并保存本次值。
+  float b = 0.7; // 系数越小平滑越强，响应越慢。
   channel_1_pwm = (1.0 - b) * channel_1_pwm_prev + b * channel_1_pwm;
   channel_2_pwm = (1.0 - b) * channel_2_pwm_prev + b * channel_2_pwm;
   channel_3_pwm = (1.0 - b) * channel_3_pwm_prev + b * channel_3_pwm;
@@ -1987,19 +1914,9 @@ void getCommands() {
   channel_4_pwm_prev = channel_4_pwm;
 }
 
+// 检测遥控 PWM 是否越过设定范围；任一通道异常时回退到安全值。
 void failSafe() {
-  // DESCRIPTION: If radio gives garbage values, set all commands to default
-  // values
-  /*
-   * Radio connection failsafe used to check if the getCommands() function is
-   * returning acceptable pwm values. If any of the commands are lower than 800
-   * or higher than 2200, then we can be certain that there is an issue with the
-   * radio connection (most likely hardware related). If any of the channels
-   * show this failure, then all of the radio commands channel_x_pwm are set to
-   * default failsafe values specified in the setup. Comment out this function
-   * when troubleshooting your radio connection in case any extreme values are
-   * triggering this function to overwrite the printed variables.
-   */
+  // 任一遥控通道超出 800～2200 μs 时，将全部通道置为预设安全值。
   unsigned minVal = 800;
   unsigned maxVal = 2200;
   int check1 = 0;
@@ -2013,7 +1930,7 @@ void failSafe() {
   int check9 = 0;
   int check10 = 0;
 
-  // Triggers for failure criteria
+  // 检查遥控信号越界条件。
   if (channel_1_pwm > maxVal || channel_1_pwm < minVal)
     check1 = 1;
   if (channel_2_pwm > maxVal || channel_2_pwm < minVal)
@@ -2031,7 +1948,7 @@ void failSafe() {
   if (channel_8_pwm > maxVal || channel_8_pwm < minVal)
     check8 = 1;
 
-  // If any failures, set to default failsafe values
+  // 任一通道异常时，全部通道恢复为预设安全值。
   if ((check1 + check2 + check3 + check4 + check5 + check6 + check7 + check8) >
       0) {
     channel_1_pwm = channel_1_fs;
@@ -2045,25 +1962,18 @@ void failSafe() {
   }
 }
 
+// 预留的电机输出接口；当前函数体为空，不会驱动电机。
 void commandMotors() {}
 
+// 预留的电机解锁接口；当前函数体为空。
 void armMotors() {}
 
+// 预留的电调标定接口；当前函数体为空。
 void calibrateESCs() {}
 
+// 交换滚转和偏航期望值，并按输入的 1 或 -1 决定各轴方向。
 void switchRollYaw(int reverseRoll, int reverseYaw) {
-  // DESCRIPTION: Switches roll_des and yaw_des variables for tailsitter-type
-  // configurations
-  /*
-   * Takes in two integers (either 1 or -1) corresponding to the desired
-   * reversing of the roll axis and yaw axis, respectively. Reversing of the
-   * roll or yaw axis may be needed when switching between the two for some
-   * dynamic configurations. Inputs of 1, 1 does not reverse either of them,
-   * while -1, 1 will reverse the output corresponding to the new roll axis.
-   * This function may be replaced in the future by a function that switches the
-   * IMU data instead (so that angle can also be estimated with the IMU tilted
-   * 90 degrees from default level).
-   */
+  // 交换滚转和偏航期望值，并分别按输入符号（1 或 -1）决定方向。
   float switch_holder;
 
   switch_holder = yaw_des;
@@ -2071,12 +1981,13 @@ void switchRollYaw(int reverseRoll, int reverseYaw) {
   roll_des = reverseRoll * switch_holder;
 }
 
+// 预留的油门切断接口；当前函数体为空。
 void throttleCut() {}
 
 
+// 按机间相对角与角速度误差计算六个构型通道的控制量。
 void controlFlapMotion() {
-  // DESCRIPTION: Computes control commands based on state error (angle) in
-  // cascaded scheme FlapMotion!
+  // 根据相邻机体角度误差和角速度误差计算襟翼构型控制量。
   float GyroX;
 #if defined USE_MPU6050_I2C
   GyroX = -GyroX_6050; // 安装位置
@@ -2112,7 +2023,7 @@ void controlFlapMotion() {
   Pdf = GYRO_X_F - GYRO_X_D;
   Peg = GYRO_X_G - GYRO_X_E;
 
-  // Outer loop - P
+  // 外环：相邻机体夹角比例控制。
   // float Phiab_des_ol, Phiac_des_ol;  //outerloop
   // Phiab
   error_Phiab = Phiab_des - Phiab_Mea;
@@ -2139,7 +2050,7 @@ void controlFlapMotion() {
 
   // Serial.println(Phibd_Mea);
 
-  // Apply loop gain, constrain, and LP filter for artificial damping
+  // 对外环指令限幅并低通，抑制相邻机体运动振荡。
   float Kl = 30.0;
   Phiab_des_ol = Kl * Phiab_des_ol;
   Phiac_des_ol = Kl * Phiac_des_ol;
@@ -2161,105 +2072,99 @@ void controlFlapMotion() {
   error_Phiab_RATE = Phiab_des_ol - Pab;
   integral_Phiab_RATE_il = integral_Phiab_RATE_prev_il + error_Phiab_RATE * dt;
   if (channel_1_pwm <
-      1060) { // Don't let integrator build if throttle is too low
+      1060) { // 通道 1 低于阈值时清零积分项。
     integral_Phiab_RATE_il = 0;
   }
   integral_Phiab_RATE_il =
       constrain(integral_Phiab_RATE_il, -i_limit,
-                i_limit); // Saturate integrator to prevent unsafe buildup
+                i_limit); // 对积分项限幅，防止持续饱和。
   // derivative_roll = (error_roll - error_roll_prev)/dt;
   Phiab_PID = coeffconfiguration * .01 *
               (Kff_FLAP_RATE * Phiab_des_ol + Kp_FLAP_RATE * error_Phiab_RATE +
                i_valid * Ki_FLAP_RATE *
-                   integral_Phiab_RATE_il); // Scaled by .01 to bring within -1
-                                            // to 1 range
+                   integral_Phiab_RATE_il); // 按 0.01 系数缩放为混控量。
 
   // Phiac
   error_Phiac_RATE = Phiac_des_ol - Pac;
   integral_Phiac_RATE_il = integral_Phiac_RATE_prev_il + error_Phiac_RATE * dt;
   if (channel_1_pwm <
-      1060) { // Don't let integrator build if throttle is too low
+      1060) { // 通道 1 低于阈值时清零积分项。
     integral_Phiac_RATE_il = 0;
   }
   integral_Phiac_RATE_il =
       constrain(integral_Phiac_RATE_il, -i_limit,
-                i_limit); // Saturate integrator to prevent unsafe buildup
+                i_limit); // 对积分项限幅，防止持续饱和。
   // derivative_pitch = (error_pitch - error_pitch_prev)/dt;
   Phiac_PID = coeffconfiguration * .01 *
               (Kff_FLAP_RATE * Phiac_des_ol + Kp_FLAP_RATE * error_Phiac_RATE +
                i_valid * Ki_FLAP_RATE *
-                   integral_Phiac_RATE_il); // Scaled by .01 to bring within -1
-                                            // to 1 range
+                   integral_Phiac_RATE_il); // 按 0.01 系数缩放为混控量。
 
   // Phibd
   error_Phibd_RATE = Phibd_des_ol - Pbd;
   integral_Phibd_RATE_il = integral_Phibd_RATE_prev_il + error_Phibd_RATE * dt;
   if (channel_1_pwm <
-      1060) { // Don't let integrator build if throttle is too low
+      1060) { // 通道 1 低于阈值时清零积分项。
     integral_Phibd_RATE_il = 0;
   }
   integral_Phibd_RATE_il =
       constrain(integral_Phibd_RATE_il, -i_limit,
-                i_limit); // Saturate integrator to prevent unsafe buildup
+                i_limit); // 对积分项限幅，防止持续饱和。
   // derivative_pitch = (error_pitch - error_pitch_prev)/dt;
   Phibd_PID = coeffconfiguration * .01 *
               (Kff_FLAP_RATE * Phibd_des_ol + Kp_FLAP_RATE * error_Phibd_RATE +
                i_valid * Ki_FLAP_RATE *
-                   integral_Phibd_RATE_il); // Scaled by .01 to bring within -1
-                                            // to 1 range
+                   integral_Phibd_RATE_il); // 按 0.01 系数缩放为混控量。
 
   // Phice
   error_Phice_RATE = Phice_des_ol - Pce;
   integral_Phice_RATE_il = integral_Phice_RATE_prev_il + error_Phice_RATE * dt;
   if (channel_1_pwm <
-      1060) { // Don't let integrator build if throttle is too low
+      1060) { // 通道 1 低于阈值时清零积分项。
     integral_Phice_RATE_il = 0;
   }
   integral_Phice_RATE_il =
       constrain(integral_Phice_RATE_il, -i_limit,
-                i_limit); // Saturate integrator to prevent unsafe buildup
+                i_limit); // 对积分项限幅，防止持续饱和。
   // derivative_pitch = (error_pitch - error_pitch_prev)/dt;
   Phice_PID = coeffconfiguration * .01 *
               (Kff_FLAP_RATE * Phice_des_ol + Kp_FLAP_RATE * error_Phice_RATE +
                i_valid * Ki_FLAP_RATE *
-                   integral_Phice_RATE_il); // Scaled by .01 to bring within -1
-                                            // to 1 range
+                   integral_Phice_RATE_il); // 按 0.01 系数缩放为混控量。
 
   // Phidf
   error_Phidf_RATE = Phidf_des_ol - Pdf;
   integral_Phidf_RATE_il = integral_Phidf_RATE_prev_il + error_Phidf_RATE * dt;
   if (channel_1_pwm <
-      1060) { // Don't let integrator build if throttle is too low
+      1060) { // 通道 1 低于阈值时清零积分项。
     integral_Phice_RATE_il = 0;
   }
   integral_Phidf_RATE_il =
       constrain(integral_Phidf_RATE_il, -i_limit,
-                i_limit); // Saturate integrator to prevent unsafe buildup
+                i_limit); // 对积分项限幅，防止持续饱和。
   // derivative_pitch = (error_pitch - error_pitch_prev)/dt;
   Phidf_PID = coeffconfiguration * .01 *
               (Kff_FLAP_RATE * Phidf_des_ol + Kp_FLAP_RATE * error_Phidf_RATE +
                i_valid * Ki_FLAP_RATE *
-                   integral_Phidf_RATE_il); // Scaled by .01 to bring within -1
-                                            // to 1 range
+                   integral_Phidf_RATE_il); // 按 0.01 系数缩放为混控量。
 
   // Phieg
   error_Phieg_RATE = Phieg_des_ol - Peg;
   integral_Phieg_RATE_il = integral_Phieg_RATE_prev_il + error_Phieg_RATE * dt;
   if (channel_1_pwm <
-      1060) { // Don't let integrator build if throttle is too low
+      1060) { // 通道 1 低于阈值时清零积分项。
     integral_Phieg_RATE_il = 0;
   }
   integral_Phieg_RATE_il =
       constrain(integral_Phieg_RATE_il, -i_limit,
-                i_limit); // Saturate integrator to prevent unsafe buildup
+                i_limit); // 对积分项限幅，防止持续饱和。
   // derivative_pitch = (error_pitch - error_pitch_prev)/dt;
   Phieg_PID = coeffconfiguration * .01 *
               (Kff_FLAP_RATE * Phieg_des_ol + Kp_FLAP_RATE * error_Phieg_RATE +
                i_valid * Ki_FLAP_RATE *
-                   integral_Phieg_RATE_il); // Scaled by .01 to bring within -1
-                                            // to 1 range
+                   integral_Phieg_RATE_il); // 按 0.01 系数缩放为混控量。
 
-  // Update Flap variables
+  // 保存襟翼控制状态供下一周期使用。
   Phiab_des_prev = Phiab_des_ol;
   Phiac_des_prev = Phiac_des_ol;
   Phibd_des_prev = Phibd_des_ol;
@@ -2275,6 +2180,7 @@ void controlFlapMotion() {
   relativeAngle_ready_prev = relativeAngle_ready;
 }
 
+// 上电时把遥控通道 1～6 初始化为预设安全 PWM。
 void initializeRadioFailsafeChannels() {
   channel_1_pwm = channel_1_fs;
   channel_2_pwm = channel_2_fs;
@@ -2284,14 +2190,14 @@ void initializeRadioFailsafeChannels() {
   channel_6_pwm = channel_6_fs;
 }
 
+// 根据当前模式选择带积分增稳、无积分增稳或手动，并更新模式标志和指示灯。
 void runSelectedControlMode() {
   if (currentMode == STABILIZE_MODE) // 增稳
   {
     i_valid = 1.0;
     int_is_valid = true;
     force_manual = false;
-    controlANGLE2(); // Stabilize on angle setpoint using cascaded method. Rate
-                     // controller must be tuned well first!
+    controlANGLE2(); // 使用串级角度控制器；内环角速度增益需先完成整定。
     displayFlightModeIndicators(currentMode);
     controlFlapMotion();
   } else if (currentMode == STABLIZE_MODE_NO_I) // 增稳
@@ -2299,7 +2205,7 @@ void runSelectedControlMode() {
     int_is_valid = false;
     force_manual = false;
     i_valid = 0.0;
-    controlANGLE2();        // Stabilize on angle no I
+    controlANGLE2();        // 使用无积分的角度增稳模式。
     displayFlightModeIndicators(currentMode);
     controlFlapMotion();
   } else if (currentMode == MANUAL_MODE) {

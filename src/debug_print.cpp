@@ -4,10 +4,13 @@
 #include "interaircraft_comm.h"
 #include "sensor_processing.h"
 
+// 所有调试打印共用一个节流时间戳；同一周期调用多个打印函数时可能只输出第一个。
 static unsigned long print_counter = 0;
 
+// 输出从机当前油门 PWM 指令，单位为 μs。
 void printLocalThrottle() { Serial.println(Local_thro_PWM); }
 
+// 按共享时间戳节流输出遥控各通道 PWM。
 void printRadioData() {
   if (current_time - print_counter > 10000) {
     print_counter = micros();
@@ -26,6 +29,7 @@ void printRadioData() {
   }
 }
 
+// 按共享时间戳节流输出油门与三轴期望状态。
 void printDesiredState() {
   if (current_time - print_counter > 10000) {
     print_counter = micros();
@@ -40,6 +44,7 @@ void printDesiredState() {
   }
 }
 
+// 输出相邻机体夹角或原始姿态差，以及各子机滚转角速度。
 void printConfigurationData() {
   if (current_time - print_counter > 10000) {
     print_counter = micros();
@@ -87,6 +92,7 @@ void printConfigurationData() {
   }
 }
 
+// 输出各轴与构型控制器的 PID 结果，供串口调试。
 void printPIDoutput() {
   if (current_time - print_counter > 10000) {
     print_counter = micros();
@@ -107,6 +113,7 @@ void printPIDoutput() {
   }
 }
 
+// 输出电机或油门相关控制指令，供串口调试。
 void printMotorCommands() {
   if (current_time - print_counter > 10000) {
     print_counter = micros();
@@ -125,6 +132,7 @@ void printMotorCommands() {
   }
 }
 
+// 输出各执行器 PWM 指令，供串口调试。
 void printServoCommands() {
   if (current_time - print_counter > 10000) {
     print_counter = micros();
@@ -145,6 +153,7 @@ void printServoCommands() {
   }
 }
 
+// 输出主循环时间间隔 dt，单位为 μs；本函数不直接计算频率。
 void printLoopRate() {
   if (current_time - print_counter > 10000) {
     print_counter = micros();
@@ -154,6 +163,7 @@ void printLoopRate() {
 }
 
 
+// 输出内置 IMU 三轴角速度，单位为 °/s。
 void printGyroData() {
   if (current_time - print_counter > 10000) {
     print_counter = micros();
@@ -174,6 +184,7 @@ void printGyroData() {
 }
 
 
+// 输出内置 IMU 三轴加速度，单位为 g。
 void printAccelData() {
   if (current_time - print_counter > 10000) {
     print_counter = micros();
@@ -194,6 +205,7 @@ void printAccelData() {
 }
 
 
+// 输出磁力计三轴数据，单位沿用传感器处理模块的 μT。
 void printMagData() {
   if (current_time - print_counter > 10000) {
     print_counter = micros();
@@ -207,6 +219,7 @@ void printMagData() {
 }
 
 
+// 输出当前姿态解算的滚转、俯仰和偏航角，单位为度。
 void printRollPitchYaw() {
   if (current_time - print_counter > 10000) {
     print_counter = micros();
@@ -220,6 +233,7 @@ void printRollPitchYaw() {
 }
 
 
+// 输出姿态估计使用的四元数分量。
 void printQuaternion() {
   if (current_time - print_counter > 10000) {
     print_counter = micros();

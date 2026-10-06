@@ -2,10 +2,12 @@
 
 #include "flight_config.h"
 
-// Control outputs and settings consumed by other modules. Controller internals stay in control_modes.cpp.
+// 仅声明日志、执行器、通信等模块需要读取的控制状态；控制器内部量留在 control_modes.cpp。
+// PWM 单位为微秒，遥控通道值也按 PWM 微秒数表示。
 extern float central_pitch;
 extern int channel_1_pwm, channel_2_pwm, channel_3_pwm, channel_4_pwm;
 extern int channel_5_pwm, channel_6_pwm, channel_7_pwm, channel_8_pwm;
+// 各通道方向系数与各机安装偏置。
 extern const int pwm_channel1_rev, pwm_channel2_rev, pwm_channel3_rev,
     pwm_channel4_rev, pwm_channel5_rev;
 extern const float pwm_channel1B_trim, pwm_channel2B_trim;

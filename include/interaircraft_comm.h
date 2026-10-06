@@ -2,6 +2,7 @@
 
 #include <Arduino.h>
 
+// 从相邻机体接收的姿态、舵机及期望状态，供控制器和日志读取。
 extern float rollAB_rad_Qua;
 extern float Local_pitch_des;
 extern int Local_ail1_PWM, Local_ail2_PWM, Local_thro_PWM, Local_rudd_PWM,
@@ -19,6 +20,7 @@ void sendGYROxANGLE();
 void receiveCommandData();
 void getGYROxANGLEleft();
 void getGYROxANGLEright();
+// index=0/1/2 对应同侧由近到远的三架子机；舵机指令单位为 PWM 微秒数。
 void setLeftChildCommand(unsigned int index, int aileron1, int aileron2,
                          int throttle, int rudder, float pitch,
                          int elevatorManual, int elevatorFeedForward);

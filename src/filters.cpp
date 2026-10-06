@@ -6,6 +6,7 @@
 PX4LowPassFilter2p gyroFiltX, gyroFiltY, gyroFiltZ;
 PX4LowPassFilter2p gyroFiltYIndi, gyroFiltXIndi, gyroFiltZIndi;
 
+// 按采样频率和截止频率（Hz）计算二阶低通系数；非正参数时改为直接透传。
 void PX4LowPassFilter2p::set_cutoff_frequency(float sample_freq, float cutoff_freq) {
   if (sample_freq <= 0.0f || cutoff_freq <= 0.0f) {
     _b0 = 1.0f; _b1 = 0.0f; _b2 = 0.0f;
@@ -22,6 +23,7 @@ void PX4LowPassFilter2p::set_cutoff_frequency(float sample_freq, float cutoff_fr
   _a2 = (1.0f - 2.0f * cosf(PI / 4.0f) * ohm + ohm * ohm) / c;
 }
 
+// 输入一个新样本，更新二阶滤波器内部状态并返回滤波结果。
 float PX4LowPassFilter2p::apply(float sample) {
   float delay_element_0 = sample - _delay_element_1 * _a1 - _delay_element_2 * _a2;
   float output = delay_element_0 * _b0 + _delay_element_1 * _b1 + _delay_element_2 * _b2;
@@ -30,6 +32,7 @@ float PX4LowPassFilter2p::apply(float sample) {
   return output;
 }
 
+// 将滤波器延迟状态重置到指定样本对应的稳态值。
 void PX4LowPassFilter2p::reset(float sample) {
   _delay_element_1 = _delay_element_2 = sample / (1.0f + _a1 + _a2);
 }
@@ -40,6 +43,7 @@ static PX4LowPassFilter2p gyroDerivFiltX, gyroDerivFiltY,
 
 static PX4LowPassFilter2p angularAccFiltX, angularAccFiltY, angularAccFiltZ;
 
+// 为角速度差分前后两级滤波器设置 500 Hz 采样参数。
 void initializeAngularAccelerationFilters() {
   angularAccFiltX.set_cutoff_frequency(500, 100);
   angularAccFiltY.set_cutoff_frequency(500, 20);
@@ -58,7 +62,9 @@ unsigned long prev_time_gyro_deriv = 0;
 
 float dp, dq, dr;
 
+// 初始化姿态控制和 INDI 控制所用的独立角速度滤波器。
 void initializeControlFilters() {
+  // 控制环按 500 Hz 采样；INDI 与常规姿态控制使用独立滤波器状态。
   gyroFiltX.set_cutoff_frequency(500, 40);
   gyroFiltY.set_cutoff_frequency(500, 40);
   gyroFiltZ.set_cutoff_frequency(500, 40);
@@ -68,13 +74,16 @@ void initializeControlFilters() {
   gyroFiltZIndi.set_cutoff_frequency(500, 100);
 }
 
+// 由内置陀螺仪角速度计算 dp、dq、dr，单位为 °/s²；异常采样间隔时清零输出。
 void getAngularACC() {
+  // 先平滑角速度再差分，最后滤波并限幅，避免差分放大传感器噪声。
   unsigned long now = micros();
 
   float dt_deriv = (now - prev_time_gyro_deriv) * 1.0e-6f;
   prev_time_gyro_deriv = now;
 
   if (dt_deriv <= 0.0f || dt_deriv > 0.01f) {
+    // 首次调用或采样中断后重建历史值，跳过本次角加速度计算。
     gyroX_filt_prev = gyroDerivFiltX.apply(-GyroX_6050);
     gyroY_filt_prev = gyroDerivFiltY.apply(GyroY_6050);
     gyroZ_filt_prev = gyroDerivFiltZ.apply(GyroZ_6050);
@@ -107,32 +116,24 @@ void getAngularACC() {
 }
 
 
-float B_madgwick = 0.04; // Madgwick filter parameter 后面定义过了default 0.04
+float B_madgwick = 0.04; // 九轴姿态校正权重。
 float B_madgwick_adaptive = 0.04; // 动态权重
 float base_B_madgwick = 0.04;     // 基准权重
 
 float roll_IMU, pitch_IMU, yaw_IMU;
 
-float q0 = 1.0f; // Initialize quaternion for madgwick filter 假设直立
+float q0 = 1.0f; // 初始姿态假设机体水平。
 float q1 = 0.0f;
 float q2 = 0.0f;
 float q3 = 0.0f;
 
 
-// Madgwick(GyroX, -GyroY, -GyroZ, -AccX, AccY, AccZ, MagY, -MagX, MagZ, dt);
+// 使用九轴 Madgwick 算法更新共享姿态四元数与欧拉角；磁力计无效时改用六轴算法。
+// 参数名沿用旧接口，实际传入相邻采样间隔，单位为秒。
 void Madgwick(float invSampleFreq) {
-  // DESCRIPTION: Attitude estimation through sensor fusion - 9DOF
-  /*
-   * This function fuses the accelerometer gyro, and magnetometer readings AccX,
-   * AccY, AccZ, GyroX, GyroY, GyroZ, MagX, MagY, and MagZ for attitude
-   * estimation. Don't worry about the math. There is a tunable parameter
-   * B_madgwick in the user specified variable section which basically adjusts
-   * the weight of gyro data in the state estimate. Higher beta leads to noisier
-   * estimate, lower beta leads to slower to respond estimate. It is currently
-   * tuned for 2kHz loop rate. This function updates the roll_IMU, pitch_IMU,
-   * and yaw_IMU variables which are in degrees. If magnetometer data is not
-   * available, this function calls Madgwick6DOF() instead.
-   */
+  // 九轴姿态融合：陀螺仪积分预测姿态，加速度计与磁力计提供校正。
+  // 当前仅启用 MPU6050 时走六轴分支；磁力计全零时也回退至六轴分支。
+  // 参数名沿用旧代码，实际含义为本轮时间间隔（秒）；输出欧拉角单位为度。
   float gx, gy, gz, ax, ay, az, mx, my, mz;
   float recipNorm;
   float s0, s1, s2, s3;
@@ -142,68 +143,59 @@ void Madgwick(float invSampleFreq) {
       _2q2, _2q3, _2q0q2, _2q2q3, q0q0, q0q1, q0q2, q0q3, q1q1, q1q2, q1q3,
       q2q2, q2q3, q3q3;
 
-// use 6DOF algorithm if only MPU6050 is being used
+// 仅有 MPU6050 时没有有效磁力计输入。
 #if defined USE_MPU6050_I2C && !defined USE_MPU9250_SPI
   Madgwick6DOF(GyroX_6050, GyroY_6050, GyroZ_6050, AccX_6050, AccY_6050,
                AccZ_6050, invSampleFreq);
   return;
 #endif
 
-  // Use 6DOF algorithm if magnetometer measurement invalid (avoids NaN in
-  // magnetometer normalisation) 用了9250但是磁力计坏了
+  // 磁力计三轴全零时无法归一化，改用六轴算法。
   if ((MagY_9250 == 0.0f) && (-MagX_9250 == 0.0f) && (MagZ_9250 == 0.0f)) {
     Madgwick6DOF(GyroX_9250, GyroY_9250, GyroZ_9250, AccX_9250, AccY_9250,
                  AccZ_9250, invSampleFreq);
     return;
   }
 
-  // Madgwick6DOF(GyroX_9250, GyroY_9250, GyroZ_9250, AccX_9250, AccY_9250,
-  // AccZ_9250, invSampleFreq);
-  //   return;
-
-  // Convert gyroscope degrees/sec to radians/sec
+  // 读取传感器坐标轴；下方按姿态算法需要的方向重排磁力计轴。
   gx = GyroX_9250;
   gy = GyroY_9250;
   gz = GyroZ_9250;
   ax = AccX_9250;
   ay = AccY_9250;
   az = AccZ_9250;
-  // IMU的磁力计输出有问题。确实应该这样转一下
+  // 磁力计 X/Y 交换并反向，与当前传感器安装方向对应。
   mx = MagY_9250;
   my = -MagX_9250;
   mz = MagZ_9250;
 
-  // 转换一下以满足飞行力学上的坐标定义
-
+  // 陀螺仪由 deg/s 换算为 rad/s。
   gx *= 0.0174533f; // 1/57.3
   gy *= 0.0174533f;
   gz *= 0.0174533f;
 
-  // Rate of change of quaternion from gyroscope
+  // 根据角速度计算四元数变化率。
   qDot1 = 0.5f * (-q1 * gx - q2 * gy - q3 * gz);
   qDot2 = 0.5f * (q0 * gx + q2 * gz - q3 * gy);
   qDot3 = 0.5f * (q0 * gy - q1 * gz + q3 * gx);
   qDot4 = 0.5f * (q0 * gz + q1 * gy - q2 * gx);
 
-  // Serial.println(gx -gy -gz);
-  // Compute feedback only if accelerometer measurement valid (avoids NaN in
-  // accelerometer normalisation)
+  // 加速度计全零时跳过反馈，避免归一化时除以零。
   if (!((ax == 0.0f) && (ay == 0.0f) && (az == 0.0f))) {
 
     float Accnorm = sqrt(ax * ax + ay * ay + az * az);
-    // Normalise accelerometer measurement
+    // 将加速度和地磁方向归一化，用于姿态误差计算。
     recipNorm = invSqrt(ax * ax + ay * ay + az * az);
     ax *= recipNorm;
     ay *= recipNorm;
     az *= recipNorm;
 
-    // Normalise magnetometer measurement
     recipNorm = invSqrt(mx * mx + my * my + mz * mz);
     mx *= recipNorm;
     my *= recipNorm;
     mz *= recipNorm;
 
-    // Auxiliary variables to avoid repeated arithmetic
+    // 缓存重复使用的四元数乘积。
     _2q0mx = 2.0f * q0 * mx;
     _2q0my = 2.0f * q0 * my;
     _2q0mz = 2.0f * q0 * mz;
@@ -225,8 +217,7 @@ void Madgwick(float invSampleFreq) {
     q2q3 = q2 * q3;
     q3q3 = q3 * q3;
 
-    // Reference direction of Earth's magnetic field
-    // 从传感器测量值，乘上姿态四元数，得到解算的地磁方向 地磁方向已知吗？
+    // 将测得的地磁向量旋转到参考坐标系，估计水平与竖直分量。
     hx = mx * q0q0 - _2q0my * q3 + _2q0mz * q2 + mx * q1q1 + _2q1 * my * q2 +
          _2q1 * mz * q3 - mx * q2q2 - mx * q3q3;
     hy = _2q0mx * q3 + my * q0q0 - _2q0mz * q1 + _2q1mx * q2 - my * q1q1 +
@@ -237,7 +228,7 @@ void Madgwick(float invSampleFreq) {
     _4bx = 2.0f * _2bx;
     _4bz = 2.0f * _2bz;
 
-    // Gradient decent algorithm corrective step
+    // 梯度下降得到姿态误差校正方向。
     s0 = -_2q2 * (2.0f * q1q3 - _2q0q2 - ax) +
          _2q1 * (2.0f * q0q1 + _2q2q3 - ay) -
          _2bz * q2 * (_2bx * (0.5f - q2q2 - q3q3) + _2bz * (q1q3 - q0q2) - mx) +
@@ -269,13 +260,13 @@ void Madgwick(float invSampleFreq) {
              (_2bx * (q1q2 - q0q3) + _2bz * (q0q1 + q2q3) - my) +
          _2bx * q1 * (_2bx * (q0q2 + q1q3) + _2bz * (0.5f - q1q1 - q2q2) - mz);
     recipNorm = invSqrt(s0 * s0 + s1 * s1 + s2 * s2 +
-                        s3 * s3); // normalise step magnitude
+                        s3 * s3); // 归一化校正梯度。
     s0 *= recipNorm;
     s1 *= recipNorm;
     s2 *= recipNorm;
     s3 *= recipNorm;
 
-    // Apply feedback step
+    // 按校正权重修正四元数变化率。
     /*
     if (abs(gz)>1)//1rad/s 修正
     {
@@ -293,56 +284,52 @@ void Madgwick(float invSampleFreq) {
     qDot4 -= B_madgwick * factor * s3;
   }
 
-  // Integrate rate of change of quaternion to yield quaternion
+  // 用本轮时间间隔积分，并重新归一化四元数。
   q0 += qDot1 * invSampleFreq;
   q1 += qDot2 * invSampleFreq;
   q2 += qDot3 * invSampleFreq;
   q3 += qDot4 * invSampleFreq;
 
-  // Normalize quaternion
   recipNorm = invSqrt(q0 * q0 + q1 * q1 + q2 * q2 + q3 * q3);
   q0 *= recipNorm;
   q1 *= recipNorm;
   q2 *= recipNorm;
   q3 *= recipNorm;
 
-  // compute angles - NWU
+  // 转回欧拉角；滚转角符号与机体安装坐标系约定一致。
   roll_IMU = -atan2(q0 * q1 + q2 * q3, 0.5f - q1 * q1 - q2 * q2) *
-             57.29577951; // degrees
+             57.29577951; // 转为度。
   pitch_IMU =
       asin(constrain(-2.0f * (q1 * q3 - q0 * q2), -0.999999, 0.999999)) *
-      57.29577951; // degrees
+      57.29577951; // 转为度。
   yaw_IMU = atan2(q1 * q2 + q0 * q3, 0.5f - q2 * q2 - q3 * q3) *
-            57.29577951; // degrees
+            57.29577951; // 转为度。
 }
 
+// 用陀螺仪和加速度计进行六轴姿态融合，更新共享四元数及欧拉角。
+// gx、gy、gz 单位为 °/s；最后一个参数实际为采样间隔（秒）。
 void Madgwick6DOF(float gx, float gy, float gz, float ax, float ay, float az,
                   float invSampleFreq) {
-  // DESCRIPTION: Attitude estimation through sensor fusion - 6DOF
-  /*
-   * See description of Madgwick() for more information. This is a 6DOF
-   * implimentation for when magnetometer data is not available (for example
-   * when using the recommended MPU6050 IMU for the default setup).
-   */
+  // 六轴姿态融合：无磁力计时只用角速度与重力方向修正姿态。
+  // 加速度模长偏离 1 g 越多，越降低加速度反馈权重。
   float recipNorm;
   float s0, s1, s2, s3;
   float qDot1, qDot2, qDot3, qDot4;
   float _2q0, _2q1, _2q2, _2q3, _4q0, _4q1, _4q2, _8q1, _8q2, q0q0, q1q1, q2q2,
       q3q3;
 
-  // Convert gyroscope degrees/sec to radians/sec
+  // 陀螺仪由 deg/s 换算为 rad/s。
   gx *= 0.0174533f;
   gy *= 0.0174533f;
   gz *= 0.0174533f;
 
-  // Rate of change of quaternion from gyroscope  //和飞行动力学课本一样
+  // 根据角速度计算四元数变化率。
   qDot1 = 0.5f * (-q1 * gx - q2 * gy - q3 * gz);
   qDot2 = 0.5f * (q0 * gx + q2 * gz - q3 * gy);
   qDot3 = 0.5f * (q0 * gy - q1 * gz + q3 * gx);
   qDot4 = 0.5f * (q0 * gz + q1 * gy - q2 * gx);
 
-  // Compute feedback only if accelerometer measurement valid (avoids NaN in
-  // accelerometer normalisation)
+  // 加速度计全零时不计算反馈，避免除以零。
   if (!((ax == 0.0f) && (ay == 0.0f) && (az == 0.0f))) {
     // 1. 计算加速度向量的模
     float acc_norm = sqrt(ax * ax + ay * ay + az * az);
@@ -360,13 +347,12 @@ void Madgwick6DOF(float gx, float gy, float gz, float ax, float ay, float az,
           base_B_madgwick *
           (1.0f - constrain((acc_error - 0.1f) / 0.4f, 0.0f, 0.98f));
     }
-    // Serial.println(B_madgwick_adaptive);
     recipNorm = invSqrt(ax * ax + ay * ay + az * az);
     ax *= recipNorm;
     ay *= recipNorm;
     az *= recipNorm;
 
-    // Auxiliary variables to avoid repeated arithmetic
+    // 缓存重复使用的四元数乘积。
     _2q0 = 2.0f * q0;
     _2q1 = 2.0f * q1;
     _2q2 = 2.0f * q2;
@@ -381,7 +367,7 @@ void Madgwick6DOF(float gx, float gy, float gz, float ax, float ay, float az,
     q2q2 = q2 * q2;
     q3q3 = q3 * q3;
 
-    // Gradient decent algorithm corrective step 拿加速度计修正陀螺仪。
+    // 梯度下降得到重力方向误差。
     s0 = _4q0 * q2q2 + _2q2 * ax + _4q0 * q1q1 - _2q1 * ay;
     s1 = _4q1 * q3q3 - _2q3 * ax + 4.0f * q0q0 * q1 - _2q0 * ay - _4q1 +
          _8q1 * q1q1 + _8q1 * q2q2 + _4q1 * az;
@@ -389,17 +375,13 @@ void Madgwick6DOF(float gx, float gy, float gz, float ax, float ay, float az,
          _8q2 * q1q1 + _8q2 * q2q2 + _4q2 * az;
     s3 = 4.0f * q1q1 * q3 - _2q1 * ax + 4.0f * q2q2 * q3 - _2q2 * ay;
     recipNorm = invSqrt(s0 * s0 + s1 * s1 + s2 * s2 +
-                        s3 * s3); // normalise step magnitude
+                        s3 * s3); // 归一化校正梯度。
     s0 *= recipNorm;
     s1 *= recipNorm;
     s2 *= recipNorm;
     s3 *= recipNorm;
 
-    // Apply feedback step
-    // qDot1 -= B_madgwick * s0;
-    // qDot2 -= B_madgwick * s1;
-    // qDot3 -= B_madgwick * s2;
-    // qDot4 -= B_madgwick * s3;
+    // 用自适应权重修正陀螺仪积分结果。
 
     qDot1 -= B_madgwick_adaptive * s0;
     qDot2 -= B_madgwick_adaptive * s1;
@@ -407,46 +389,46 @@ void Madgwick6DOF(float gx, float gy, float gz, float ax, float ay, float az,
     qDot4 -= B_madgwick_adaptive * s3;
   }
 
-  // Integrate rate of change of quaternion to yield quaternion
+  // 积分并归一化四元数。
   q0 += qDot1 * invSampleFreq;
   q1 += qDot2 * invSampleFreq;
   q2 += qDot3 * invSampleFreq;
   q3 += qDot4 * invSampleFreq;
 
-  // Normalise quaternion
   recipNorm = invSqrt(q0 * q0 + q1 * q1 + q2 * q2 + q3 * q3);
   q0 *= recipNorm;
   q1 *= recipNorm;
   q2 *= recipNorm;
   q3 *= recipNorm;
 
-  // Compute angles
+  // 输出角度；滚转角按当前安装方向取反。
   roll_IMU = -atan2(q0 * q1 + q2 * q3, 0.5f - q1 * q1 - q2 * q2) *
-             57.29577951; // degrees 额外加了个负号
+             57.29577951; // 转为度。
   pitch_IMU =
       asin(constrain(-2.0f * (q1 * q3 - q0 * q2), -0.999999, 0.999999)) *
-      57.29577951; // degrees
+      57.29577951; // 转为度。
   yaw_IMU = atan2(q1 * q2 + q0 * q3, 0.5f - q2 * q2 - q3 * q3) *
-            57.29577951; // degrees
+            57.29577951; // 转为度。
 }
 
 
+// 根据当前加速度和可用磁场读数初始化姿态四元数；供上电初始姿态估计使用。
 void eulerToQuaternion() {
   // 将角度从度数转换为弧度
 
   float phi, theta, psi;
 #if defined USE_MPU6050_I2C
-  phi = atan2(AccY_6050, AccZ_6050); // Roll (绕 x 轴)
+  phi = atan2(AccY_6050, AccZ_6050); // 滚转角，绕 x 轴。
   theta = atan2(-AccX_6050, sqrt(AccY_6050 * AccY_6050 +
-                                 AccZ_6050 * AccZ_6050)); // Pitch (绕 y 轴)
-  psi = 0;                                                // Yaw (绕 z 轴)
+                                 AccZ_6050 * AccZ_6050)); // 俯仰角，绕 y 轴。
+  psi = 0;                                                // 无磁力计时偏航角初始化为 0。
 #endif
 
 #if defined USE_MPU9250_SPI
-  phi = atan2(AccY_9250, AccZ_9250); // Roll (绕 x 轴)
+  phi = atan2(AccY_9250, AccZ_9250); // 滚转角，绕 x 轴。
   theta = atan2(-AccX_9250, sqrt(AccY_9250 * AccY_9250 +
-                                 AccZ_9250 * AccZ_9250)); // Pitch (绕 y 轴)
-  psi = atan2(-MagX_9250, MagY_9250);                     // Yaw (绕 z 轴)
+                                 AccZ_9250 * AccZ_9250)); // 俯仰角，绕 y 轴。
+  psi = atan2(-MagX_9250, MagY_9250);                     // 偏航角由磁力计初始化。
 #endif
 
   // 计算中间变量

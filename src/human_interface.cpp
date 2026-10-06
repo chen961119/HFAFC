@@ -22,7 +22,7 @@ bool longPressActive1 = false;
 unsigned long buttonPressTime1 = 0;
 
 
-// SETUP OLED
+// OLED 显示器状态与初始化参数。
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire1, OLED_RESET);
 
 
@@ -78,7 +78,7 @@ float configuration_tele[6];
 float attitude_tele[3];
 
 
-// SD log
+// SD 卡日志状态。
 char filename_sd[20];
 File dataFile;
 unsigned int fileNumber = 0;
@@ -101,6 +101,7 @@ bool blinkAlternate;
 
 } // namespace
 
+// 根据当前飞行模式设置 32、33 号模式指示灯电平。
 void displayFlightModeIndicators(FlightMode mode) {
   if (mode == STABILIZE_MODE) {
     digitalWrite(33, HIGH);
@@ -114,11 +115,13 @@ void displayFlightModeIndicators(FlightMode mode) {
   }
 }
 
+// 启动调试串口与 Serial8 数传链路。
 void beginHumanInterfaceLinks() {
   Serial.begin(500000);
   Serial8.begin(115200);
 }
 
+// 初始化按键、OLED 和 SD 卡，并创建带表头的新日志文件。
 void initializeHumanInterface() {
   pinMode(32, OUTPUT);
   pinMode(33, OUTPUT);
@@ -168,6 +171,7 @@ void initializeHumanInterface() {
   displayfilenum();
 }
 
+// 按编译配置在 OLED 上显示本机 A～G 编号。
 void displayAircraftIdentity() {
 #if defined APLANE
   displayID("A");
@@ -186,14 +190,12 @@ void displayAircraftIdentity() {
 #endif
 }
 
+// 按当前闪烁间隔更新板载 LED，供观察主循环是否仍在运行。
 void loopBlink() {
-  // DESCRIPTION: Blink LED on board to indicate main loop is running
-  /*
-   * It looks cool.
-   */
+  // 以长短交替的节奏闪烁板载 LED，表示主循环仍在运行。
   if (current_time - blink_counter > blink_delay) {
     blink_counter = micros();
-    digitalWrite(13, blinkAlternate); // Pin 13 is built in LED
+    digitalWrite(13, blinkAlternate); // 13 号引脚连接板载 LED。
 
     if (blinkAlternate == 1) {
       blinkAlternate = 0;
@@ -205,8 +207,9 @@ void loopBlink() {
   }
 }
 
+// 按指定次数闪烁板载 LED；upTime、downTime 单位为 ms。
 void setupBlink(int numBlinks, int upTime, int downTime) {
-  // DESCRIPTION: Simple function to make LED on board blink as desired
+  // 初始化阶段按指定次数和亮灭时间闪烁；时间单位为 ms。
   for (int j = 1; j <= numBlinks; j++) {
     digitalWrite(13, LOW);
     delay(downTime);
@@ -216,6 +219,7 @@ void setupBlink(int numBlinks, int upTime, int downTime) {
 }
 
 
+// 按日志频率将单机状态写入 SD 文件，并定期刷新缓存。
 void loggerSINGLE() {
   float invFreq = 1.0 / logfreq * 1000000.0;
   unsigned long checker = micros();
@@ -226,7 +230,7 @@ void loggerSINGLE() {
 
   // dataFile = SD.open(filename_sd, FILE_WRITE);
   // 光打开不close 拔电就没了，但是每次都打开又close很浪费时间。
-  //  read three sensors and append to the string:
+  // 将本次采样的传感器与控制状态拼接为日志记录。
   dataString =
       String(current_time) + "," + String(q0) + "," + String(q1) + "," +
       String(q2) + "," + String(q3) + "," + String(roll_IMU) + "," +
@@ -244,7 +248,7 @@ void loggerSINGLE() {
   // Serial.println(dataString);
   dataFile.println(dataString);
 
-  // if the file is available, write to it:
+  // 文件可用时写入本次记录。
   /*
   if (dataFile) {
     dataFile.println(dataString);
@@ -275,6 +279,7 @@ void loggerSINGLE() {
   }
 }
 
+// 按日志频率将编队传感器、控制和通信状态写入 SD 文件。
 void loggerTEAM() {
   float invFreq = 1.0 / logfreq * 1000000.0;
   unsigned long checker = micros();
@@ -299,7 +304,7 @@ void loggerTEAM() {
   A_pitch_sp = pitch_des_local_log;
   // dataFile = SD.open(filename_sd, FILE_WRITE);
   // 光打开不close 拔电就没了，但是每次都打开又close很浪费时间。
-  //  read three sensors and append to the string:
+  // 将本次采样的传感器与控制状态拼接为日志记录。
   float Phiab_Mea_logger;
   float Phiac_Mea_logger;
   float Phibd_Mea_logger;
@@ -383,7 +388,7 @@ void loggerTEAM() {
       String(indi_pitch_pwm_cmd_log);
   dataFile.println(dataString);
 
-  // if the file is available, write to it:
+  // 文件可用时写入本次记录。
 
   // 在loop()最后添加定期关闭/重新打开
 
@@ -394,6 +399,7 @@ void loggerTEAM() {
   }
 }
 
+// 扫描 SD 卡中 datalogNNN.txt 文件，选择下一个 1～999 的日志编号。
 void findMaxFileNumber() {
   File root = SD.open("/");
   while (true) {
@@ -432,35 +438,39 @@ void findMaxFileNumber() {
 
 //=========================================================================================//
 
-// HELPER FUNCTIONS
+// 显示和打包辅助函数。
 
+// 把传入的机体编号文字绘制到 OLED 指定位置并立即刷新。
 void displayID(char *ss) {
   // display.clearDisplay();
-  display.setTextSize(2, 2);           // Normal 1:1 pixel scale
-  display.setTextColor(SSD1306_WHITE); // Draw white text
-  display.setCursor(100, 12);          // Start at top-left corner
+  display.setTextSize(2, 2);           // 使用双倍字体。
+  display.setTextColor(SSD1306_WHITE); // 白色文字。
+  display.setCursor(100, 12);          // 指定文本起点。
   display.println(ss);                 // 直接用指针的形式。
   display.display();
 }
 
+// 把 SD 卡状态文字绘制到 OLED 指定位置并立即刷新。
 void displaySD(char *ss) {
   // display.clearDisplay();
-  display.setTextSize(1);              // Normal 1:1 pixel scale
-  display.setTextColor(SSD1306_WHITE); // Draw white text
-  display.setCursor(100, 0);           // Start at top-left corner
+  display.setTextSize(1);              // 使用默认字体大小。
+  display.setTextColor(SSD1306_WHITE); // 白色文字。
+  display.setCursor(100, 0);           // 指定文本起点。
   display.println(ss);                 // 直接用指针的形式。
   // display.println(F("sdsds")); //用字符串
   display.display();
 }
 
+// 将当前日志编号写入 OLED 显示缓冲区。
 void displayfilenum() {
   display.setTextSize(1);
-  display.setTextColor(SSD1306_WHITE); // Draw white text
+  display.setTextColor(SSD1306_WHITE); // 白色文字。
   display.setCursor(100, 0);
   display.print(fileNumber);
   display.print((char)247); // 度符号°
 }
 
+// 按显示频率刷新相对转角及姿态角；关闭显示时直接返回。
 void displayAttitude() {
 
   if (!isdisplay) {
@@ -475,7 +485,7 @@ void displayAttitude() {
 
   // 第一行：相对滚转角
   display.setTextSize(1);
-  display.setTextColor(SSD1306_WHITE); // Draw white text
+  display.setTextColor(SSD1306_WHITE); // 白色文字。
   display.fillRect(30, 0, 50, 8, SSD1306_BLACK);
   display.setCursor(0, 0);
   display.print("Relat: ");
@@ -484,7 +494,7 @@ void displayAttitude() {
 
   // 第二行：滚转角
   display.setTextSize(1);
-  display.setTextColor(SSD1306_WHITE); // Draw white text
+  display.setTextColor(SSD1306_WHITE); // 白色文字。
   display.fillRect(30, 8, 50, 8, SSD1306_BLACK);
   display.setCursor(0, 8);
   display.print("Roll: ");
@@ -493,7 +503,7 @@ void displayAttitude() {
 
   // 第三行：俯仰角
   display.setTextSize(1);
-  display.setTextColor(SSD1306_WHITE); // Draw white text
+  display.setTextColor(SSD1306_WHITE); // 白色文字。
   display.fillRect(30, 16, 50, 8, SSD1306_BLACK);
   display.setCursor(0, 16);
   display.print("Pitch:");
@@ -502,7 +512,7 @@ void displayAttitude() {
 
   // 第四行：偏航角速度
   display.setTextSize(1);
-  display.setTextColor(SSD1306_WHITE); // Draw white text
+  display.setTextColor(SSD1306_WHITE); // 白色文字。
   display.fillRect(30, 24, 50, 8, SSD1306_BLACK);
   display.setCursor(0, 24);
   display.print("Yaw:  ");
@@ -515,6 +525,7 @@ void displayAttitude() {
   display.display();
 }
 
+// 显示启动位图，等待 1 秒后清空 OLED 缓冲区。
 void displaythumbsup() {
   display.drawBitmap(0,       // 居中X位置
                      0,       // 居中Y位置
@@ -530,9 +541,11 @@ void displaythumbsup() {
   display.clearDisplay();
 }
 
+// 以设定频率把六个构型角和两个姿态角打包发送到 Serial8。
+// 数据帧含 0x55 0x71 帧头，角度放大 10 倍后以 int16_t 传输。
 void telemetry() // 主机数传
 {
-  // 数据包结构：头(0x55) + 类型(0x71) + 8个int16_t(各2字节) + 校验和 = 21字节
+  // 数据包结构：2 字节帧头 + 8 个 int16_t + 1 字节校验和，共 19 字节。
   uint8_t buffer[19];
   uint8_t pos = 0;
   uint8_t checksum = 0;
@@ -597,6 +610,8 @@ void telemetry() // 主机数传
 }
 
 
+// 处理 36、31 号按键：短按转角清零，长按切换显示或触发 IMU 标定。
+// 使用 millis() 判断按压时长，触发校准时会阻塞主循环。
 void ProcessButtonState() {
 
   int buttonState = digitalRead(36);

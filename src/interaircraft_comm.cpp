@@ -5,11 +5,12 @@
 
 float rollAB_rad_Qua, pitchAB_rad_Qua, yawAB_rad_Qua;
 
-// Flight-control inputs shared with the communication layer.
+// 通信层只引用控制和传感器状态，不持有这些状态。
 extern float relativeAngle_ready, phiac, phibd, phice, phidf, phieg;
 extern float roll_IMU, pitch_IMU, GyroX_9250;
 
 struct ReceivedCommandData {
+  // 固定长度 50 字节指令帧解析后的字段；PWM 单位 μs，角度单位 °。
   int servo[12];
   float pitch[3];
   int ele_pwm[3];
@@ -63,6 +64,8 @@ static void sendAllDataright(int servoCommandsright[12], float pitchAnglesright[
                              int elePwmRight[3], int eleFFPwmRight[3],
                              bool lightSignalsright[3], bool int_is_valid);
 
+// 把左侧指定子机的副翼、油门、方向舵、俯仰角和升降舵指令写入发送缓存。
+// index 为同侧由近到远的 0～2；调用方负责检查范围，PWM 单位为 μs。
 void setLeftChildCommand(unsigned int index, int aileron1, int aileron2,
                          int throttle, int rudder, float pitch,
                          int elevatorManual, int elevatorFeedForward) {
@@ -76,6 +79,8 @@ void setLeftChildCommand(unsigned int index, int aileron1, int aileron2,
   eleFFPwmCommandsLeft[index] = elevatorFeedForward;
 }
 
+// 把右侧指定子机的舵面和俯仰指令写入发送缓存。
+// index 为同侧由近到远的 0～2；调用方负责检查范围，PWM 单位为 μs。
 void setRightChildCommand(unsigned int index, int aileron1, int aileron2,
                           int throttle, int rudder, float pitch,
                           int elevatorManual, int elevatorFeedForward) {
@@ -89,6 +94,7 @@ void setRightChildCommand(unsigned int index, int aileron1, int aileron2,
   eleFFPwmCommandsRight[index] = elevatorFeedForward;
 }
 
+// 将左右两侧发送缓存分别打包下发，并携带积分控制有效标志。
 void sendPreparedChildCommands(bool intIsValid) {
   sendAllDataright(servoCommandsright, pitchAnglesright, elePwmCommandsRight,
                    eleFFPwmCommandsRight, lightSignalsright, intIsValid);
@@ -96,6 +102,7 @@ void sendPreparedChildCommands(bool intIsValid) {
                   eleFFPwmCommandsLeft, lightSignalsleft, intIsValid);
 }
 
+// 从机取出本机指令后，保留更远子机的数据并沿所在侧继续转发。
 void forwardReceivedChildCommands(bool intIsValid) {
 #if defined BPLANE || defined DPLANE || defined FPLANE
   for (unsigned int i = 0; i < 4; ++i) {
@@ -132,7 +139,9 @@ void forwardReceivedChildCommands(bool intIsValid) {
 #endif
 }
 
+// 以 921600 波特率启动面向上一级机体的 Serial6。
 void beginParentLink() { Serial6.begin(921600); }
+// 以 921600 波特率启动左右子机所用的 Serial3 与 Serial5。
 void beginChildLinks() {
   Serial5.begin(921600);
   Serial3.begin(921600);
@@ -140,6 +149,8 @@ void beginChildLinks() {
 
 void printReceivedData();
 
+// 从机将本机及更远机体的转角、角速度、姿态和升降舵 PWM 组成 33 字节状态帧。
+// 状态按 0.1 单位量化，以设定频率通过 Serial6 发往上一级机体。
 void sendGYROxANGLE() // 从机要做的
 {
 
@@ -155,7 +166,7 @@ void sendGYROxANGLE() // 从机要做的
   GyroX = Gyro_X_EXT;
 #endif
 
-  // 数据包结构：头(0x55) + 类型(0x71) + 15个int16_t(各2字节) + 校验和 = 15字节
+  // 数据包结构：2 字节帧头 + 15 个 int16_t + 1 字节校验和，共 33 字节。
   uint8_t buffer[33];
   uint8_t pos = 0;
   uint8_t checksum = 0;
@@ -339,6 +350,8 @@ void sendGYROxANGLE() // 从机要做的
 }
 
 
+// 将左侧三架子机的控制缓存编码为 50 字节指令帧，经 Serial3 下发。
+// int_is_valid 表示是否允许积分控制；发送频率由 transfreq 限制。
 static void sendAllDataleft(int servoCommandsleft[12], float pitchAnglesleft[3],
                      int elePwmLeft[3], int eleFFPwmLeft[3],
                      bool lightSignalsleft[3], bool int_is_valid) {
@@ -353,7 +366,7 @@ static void sendAllDataleft(int servoCommandsleft[12], float pitchAnglesleft[3],
   if (checker2 - lasttransTime < invFreq2)
     return;
   lasttransTime = checker2;
-  // 固定大小缓冲区：2头字节 + 1空速有效bool + 1强制手动bool + 12舵机×2 +
+  // 固定大小缓冲区：2头字节 + 1积分控制有效bool + 1强制手动bool + 12舵机×2 +
   // 3角度×2 + 3升降舵PWM×2 + 3升降舵前馈PWM×2 + 3灯光×1 + 1校验和 = 50字节
   uint8_t buffer[50];
   uint8_t checksum = 0;
@@ -365,9 +378,9 @@ static void sendAllDataleft(int servoCommandsleft[12], float pitchAnglesleft[3],
   buffer[pos++] = 0x60;
   checksum += 0x60;
 
-  // 1.5 空速有效
-  buffer[pos++] = int_is_valid ? 0x01 : 0x00; // NEW: 添加这行
-  checksum += buffer[pos - 1];                // NEW: 添加这行
+  // 1.5 积分控制有效
+  buffer[pos++] = int_is_valid ? 0x01 : 0x00; // 积分控制有效标志。
+  checksum += buffer[pos - 1];
 
   // 1.6 强制手动
   buffer[pos++] = force_manual ? 0x01 : 0x00;
@@ -414,6 +427,8 @@ static void sendAllDataleft(int servoCommandsleft[12], float pitchAnglesleft[3],
   Serial3.write(buffer, sizeof(buffer));
 }
 
+// 将右侧三架子机的控制缓存编码为 50 字节指令帧，经 Serial5 下发。
+// int_is_valid 表示是否允许积分控制；发送频率由 transfreq 限制。
 static void sendAllDataright(int servoCommandsright[12], float pitchAnglesright[3],
                       int elePwmRight[3], int eleFFPwmRight[3],
                       bool lightSignalsright[3], bool int_is_valid) {
@@ -429,7 +444,7 @@ static void sendAllDataright(int servoCommandsright[12], float pitchAnglesright[
     return;
   lasttransTime3 = checker3;
 
-  // 固定大小缓冲区：2头字节 + 1空速有效bool + 1强制手动bool + 12舵机×2 +
+  // 固定大小缓冲区：2头字节 + 1积分控制有效bool + 1强制手动bool + 12舵机×2 +
   // 3角度×2 + 3升降舵PWM×2 + 3升降舵前馈PWM×2 + 3灯光×1 + 1校验和 = 50字节
   uint8_t buffer[50];
   uint8_t checksum = 0;
@@ -441,9 +456,9 @@ static void sendAllDataright(int servoCommandsright[12], float pitchAnglesright[
   buffer[pos++] = 0x60;
   checksum += 0x60;
 
-  // 1.5 空速有效
-  buffer[pos++] = int_is_valid ? 0x01 : 0x00; // NEW: 添加这行
-  checksum += buffer[pos - 1];                // NEW: 添加这行
+  // 1.5 积分控制有效
+  buffer[pos++] = int_is_valid ? 0x01 : 0x00; // 积分控制有效标志。
+  checksum += buffer[pos - 1];
 
   // 1.6 强制手动
   buffer[pos++] = force_manual ? 0x01 : 0x00;
@@ -491,6 +506,7 @@ static void sendAllDataright(int servoCommandsright[12], float pitchAnglesright[
 }
 
 // 接受指令数据
+// 从 Serial6 接收上一级机体的 50 字节指令帧；校验通过后提取本机舵面和模式指令。
 void receiveCommandData() {
 
   static uint8_t buffer[50];
@@ -525,9 +541,9 @@ void receiveCommandData() {
       if (checksum == buffer[49]) {
         int bufPos = 2; // 数据起始位置
 
-        // 新增：提取int_is_valid字段  // NEW: 添加这行
-        recvData.int_is_valid = (buffer[bufPos] == 0x01); // NEW: 添加这行
-        bufPos += 1;                                      // NEW: 添加这行
+        // 依序读取积分控制有效标志与强制手动标志。
+        recvData.int_is_valid = (buffer[bufPos] == 0x01);
+        bufPos += 1;
         recvData.Force_manual = (buffer[bufPos] == 0x01);
         bufPos += 1;
 
@@ -605,6 +621,7 @@ void receiveCommandData() {
   }
 }
 
+// 将最近收到的指令帧各字段打印到调试串口；每调用一次计数加一。
 void printReceivedData() {
   static uint32_t frameCount = 0;
   Serial.printf("\n=== 帧#%d ===\n", ++frameCount);
@@ -638,6 +655,7 @@ void printReceivedData() {
   Serial.println("\n=============");
 }
 
+// 从 Serial3 接收左侧 33 字节状态帧，更新 B、D、F 机的相对角与姿态状态。
 void getGYROxANGLEleft() {
   static uint8_t buffer[33];
   static uint8_t pos = 0;
@@ -724,6 +742,7 @@ void getGYROxANGLEleft() {
   }
 }
 
+// 从 Serial5 接收右侧 33 字节状态帧，更新 C、E、G 机的相对角与姿态状态。
 void getGYROxANGLEright() {
   static uint8_t buffer[33]; // 2+1+6+6+6+6+6;
   static uint8_t pos = 0;
@@ -815,6 +834,7 @@ void getGYROxANGLEright() {
   }
 }
 
+// 按本机位置读取左侧、右侧或两侧相邻机体状态。
 void receiveAdjacentAircraftStates() {
 // 信号传输
 #if defined APLANE // 主机
