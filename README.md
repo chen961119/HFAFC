@@ -33,6 +33,10 @@
 
 固件依赖由 `platformio.ini` 和 `lib/` 管理；电脑参数软件的 Python 依赖单独位于 `tools/parameter_console/requirements.txt`。
 
+## VS Code Teensy 板上断点调试
+
+连接 Teensy，打开“运行和调试”，选择“TeensyDebug：编译、上传并调试”，按 F5。程序在板上运行，单个 USB 串口专供 GDB 设置断点和查看变量；调试固件关闭普通 USB 输出和参数通信。使用参数软件时上传普通 `teensy41` 固件。详见 [板上调试说明](tools/teensy_debug/README.md)。
+
 ## USB 参数配置软件
 
 电脑端软件位于 `tools/parameter_console/`，提供 75 项参数读取/就地修改（最多支持 512 项）、SD 自动保存、列排序及支持十六进制显示的串口助手。参数类型显示为 `float` / `int`；双击当前值编辑，Enter 保存，Esc 取消。双击 `tools/parameter_console/dist/HFAFCParameterConsole.exe` 可启动；源码启动、协议、SD 恢复见 [参数软件使用说明](tools/parameter_console/README.md)。飞控开机在 SD 初始化后自动加载参数，修改成功后下次控制周期使用新值。

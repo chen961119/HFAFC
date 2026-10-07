@@ -5,6 +5,7 @@
 #include "control_modes.h"
 #include "control_state.h"
 #include "filters.h"
+#include "firmware_debug.h"
 #include "flight_clock.h"
 #include "human_interface.h"
 #include "interaircraft_comm.h"
@@ -20,6 +21,7 @@ void setup() {
   
   // 建立串口链路，再初始化传感器、执行器和控制器。
   beginHumanInterfaceLinks();
+  initializeFirmwareDebug();
   // beginTelemetryLink();
   beginParentLink();
   beginStrainSensorLink();
@@ -57,7 +59,7 @@ void setup() {
 
 // 执行一次控制周期：采样与估计、生成控制量、输出与记录，最后读取下一周期遥控指令并等待 500 Hz 节拍。
 void loop() {
-  // 本周期的时间戳用于计算 dt，也用于末尾的固定频率等待。
+
   updateFlightClock();
 
   armedStatus();
