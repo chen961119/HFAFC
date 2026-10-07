@@ -5,6 +5,7 @@
 #include "math_utils.h"
 #include "MS4525.h"
 #include <EEPROM.h>
+#include <cstring>
 #include <Wire.h>
 #if defined USE_BAROMETER
 #include <Adafruit_BMP280.h>
@@ -759,6 +760,42 @@ void getIMUdata() {
 }
 
 
+namespace {
+bool imuCalibrationReady = false;
+// 0～47 保留原有结构体，100 为转角零偏；64～71 存校准标记和校验。
+constexpr int imuCalibrationTagAddress = 64;
+constexpr int imuCalibrationChecksumAddress = 68;
+constexpr uint32_t imuCalibrationTag = 0x494D5531;
+static_assert(sizeof(CalibrationAccGyroData) <= imuCalibrationTagAddress,
+              "IMU calibration overlaps EEPROM metadata");
+
+uint32_t imuCalibrationChecksum(const CalibrationAccGyroData &data) {
+  const auto *bytes = reinterpret_cast<const uint8_t *>(&data);
+  uint32_t hash = 2166136261u;
+  for (size_t i = 0; i < sizeof(data); ++i) {
+    hash = (hash ^ bytes[i]) * 16777619u;
+  }
+  return hash;
+}
+
+bool validImuOffsets(const CalibrationAccGyroData &data) {
+  const float values[] = {data.AccErrorX_6050, data.AccErrorY_6050,
+                         data.AccErrorZ_6050, data.GyroErrorX_6050,
+                         data.GyroErrorY_6050, data.GyroErrorZ_6050};
+  for (unsigned i = 0; i < 6; ++i) {
+    uint32_t bits;
+    memcpy(&bits, &values[i], sizeof(bits));
+    // 位检查在 -ffast-math 下仍能识别 NaN/Inf。
+    if ((bits & 0x7f800000u) == 0x7f800000u) return false;
+    const float limit = i < 3 ? 6.0f : 2000.0f;
+    if (values[i] < -limit || values[i] > limit) return false;
+  }
+  return true;
+}
+} // namespace
+
+bool imuCalibrationValid() { return imuCalibrationReady; }
+
 // 静置采集 BMI088 多组数据，计算旋转后机体系的加速度和角速度零偏。
 // 完成后写入 EEPROM；标定期间应保持机体水平且静止。
 void calculate_IMU_error() {
@@ -823,12 +860,21 @@ void calculate_IMU_error() {
   calAccGyroData.GyroErrorY_6050 = (float)(sGY / c);
   calAccGyroData.GyroErrorZ_6050 = (float)(sGZ / c);
 
-  // 5. 存入 EEPROM
+  if (!validImuOffsets(calAccGyroData)) {
+    calAccGyroData = {};
+    imuCalibrationReady = false;
+    return;
+  }
+
+  // 5. 存入 EEPROM，并回读确认；保留原有数据地址。
   int addr = 0;
   byte *p = (byte *)&calAccGyroData;
   for (unsigned int i = 0; i < sizeof(CalibrationAccGyroData); i++) {
     EEPROM.write(addr++, p[i]);
   }
+  EEPROM.put(imuCalibrationChecksumAddress, imuCalibrationChecksum(calAccGyroData));
+  EEPROM.put(imuCalibrationTagAddress, imuCalibrationTag);
+  loadImuCalibration();
 
   USBSerial.println(
       "\nBMI088 SPI Rotation Calibration Complete & Saved to EEPROM.");
@@ -997,6 +1043,21 @@ void loadImuCalibration() {
   byte *pData = (byte *)&calAccGyroData;
   for (int i = 0; i < sizeof(CalibrationAccGyroData); i++) {
     pData[i] = EEPROM.read(address++);
+  }
+  uint32_t tag, checksum;
+  EEPROM.get(imuCalibrationTagAddress, tag);
+  EEPROM.get(imuCalibrationChecksumAddress, checksum);
+  // 旧固件未写标记：允许合理的非空 BMI088 校准数据继续使用。
+  bool allZero = true;
+  for (unsigned i = 0; i < 6 * sizeof(float); ++i) {
+    if (pData[i] != 0) allZero = false;
+  }
+  imuCalibrationReady = validImuOffsets(calAccGyroData) &&
+      (tag == imuCalibrationTag ? checksum == imuCalibrationChecksum(calAccGyroData)
+                               : !allZero && (tag == 0 || tag == 0xffffffffu));
+  if (!imuCalibrationReady) {
+    // 不让 EEPROM 中的 NaN/Inf 传播到姿态计算；不覆盖 EEPROM。
+    calAccGyroData = {};
   }
 }
 

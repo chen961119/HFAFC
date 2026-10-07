@@ -133,6 +133,7 @@ void displayAircraftIdentity() {
 #elif defined GPLANE
   displayID("G");
 #endif
+  if (!imuCalibrationValid()) displayAttitude();
 }
 
 // 按当前闪烁间隔更新板载 LED，供观察主循环是否仍在运行。
@@ -204,7 +205,7 @@ void displayfilenum() {
 // 按显示频率刷新相对转角及姿态角；关闭显示时直接返回。
 void displayAttitude() {
 
-  if (!isdisplay) {
+  if (!isdisplay && imuCalibrationValid()) {
     return;
   }
   float invFreq = 1.0 / displayfreq * 1000000.0;
@@ -213,6 +214,21 @@ void displayAttitude() {
   if (checker - lastdispTime < invFreq)
     return;
   lastdispTime = checker;
+
+  // 提醒占用左侧传感器区域，右侧日志编号与机体编号保持可见。
+  display.fillRect(0, 0, 96, 32, SSD1306_BLACK);
+  if (!imuCalibrationValid()) {
+    display.setTextSize(1);
+    display.setTextColor(SSD1306_WHITE);
+    display.setCursor(0, 0);
+    display.print("IMU CAL");
+    display.setCursor(0, 8);
+    display.print("REQUIRED");
+    display.setCursor(0, 16);
+    display.print("Keep flat/still");
+    display.display();
+    return;
+  }
 
   // 第一行：相对滚转角
   display.setTextSize(1);

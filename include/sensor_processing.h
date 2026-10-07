@@ -73,6 +73,7 @@ extern float dp, dq, dr;
 void beginExternalImuLink();
 void beginStrainSensorLink();
 void loadImuCalibration();
+bool imuCalibrationValid();
 void initializeInitialAttitude();
 void IMUinit();
 void getIMUdata();

@@ -40,4 +40,4 @@ datalog*.txt
 tools/parameter_console/.venv/
 tools/parameter_console/build/
 tools/parameter_console/dist/
-__pycache__/
+*/__pycache__/
