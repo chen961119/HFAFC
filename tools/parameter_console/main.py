@@ -17,6 +17,8 @@ except ImportError as exc:
     raise SystemExit("缺少 pySerial。请运行：python -m pip install -r requirements.txt") from exc
 from protocol import ReplyFramer, parameter_from_fields, validate_edit, format_value
 
+MAX_PARAMETERS = 512
+
 
 class ParameterConsole:
     def __init__(self, root):
@@ -40,6 +42,8 @@ class ParameterConsole:
         self.status = tk.StringVar(value="未连接")
         self.selected_name = tk.StringVar(value="未选择参数")
         self.new_value = tk.StringVar()
+        self.edit_box = None
+        self.editing_name = None
         self.command = tk.StringVar()
         self.hex_display = tk.BooleanVar(value=False)
         self.sort_column = None
@@ -91,7 +95,7 @@ class ParameterConsole:
         search.pack(fill="x", pady=(0, 6))
         ttk.Label(search, text="筛选").pack(side="left")
         ttk.Entry(search, textvariable=self.filter_text, width=30).pack(side="left", padx=8)
-        ttk.Label(search, text="选择或双击一行，在下方修改数值").pack(side="left")
+        ttk.Label(search, text="双击当前值编辑；Enter 保存到内存和 SD，Esc 取消").pack(side="left")
         self.filter_text.trace_add("write", lambda *_: self._render_table())
         grid = ttk.Frame(parameter_area)
         grid.pack(fill="both", expand=True)
@@ -101,8 +105,8 @@ class ParameterConsole:
                                         (100, 210, 80, 100, 140, 300)):
             self.tree.heading(column, text=label, command=lambda c=column: self._sort_heading(c))
             self.tree.column(column, width=width, minwidth=70, stretch=column == "description")
-        vertical = ttk.Scrollbar(grid, orient="vertical", command=self.tree.yview)
-        horizontal = ttk.Scrollbar(grid, orient="horizontal", command=self.tree.xview)
+        vertical = ttk.Scrollbar(grid, orient="vertical", command=lambda *args: self._scroll_table("y", *args))
+        horizontal = ttk.Scrollbar(grid, orient="horizontal", command=lambda *args: self._scroll_table("x", *args))
         self.tree.configure(yscrollcommand=vertical.set, xscrollcommand=horizontal.set)
         self.tree.grid(row=0, column=0, sticky="nsew")
         vertical.grid(row=0, column=1, sticky="ns")
@@ -110,16 +114,9 @@ class ParameterConsole:
         grid.rowconfigure(0, weight=1)
         grid.columnconfigure(0, weight=1)
         self.tree.bind("<<TreeviewSelect>>", self._select_parameter)
-        self.tree.bind("<Double-1>", lambda _: self.edit_box.focus_set())
-        editor = ttk.Frame(outer)
-        editor.grid(row=3, column=0, sticky="ew", pady=(8, 0))
-        self.editor_frame = editor
-        ttk.Label(editor, textvariable=self.selected_name, width=28).pack(side="left")
-        ttk.Label(editor, text="新值").pack(side="left", padx=6)
-        self.edit_box = ttk.Entry(editor, textvariable=self.new_value, width=18)
-        self.edit_box.pack(side="left")
-        self.write_button = ttk.Button(editor, text="写入内存并保存 SD", command=self.write_parameter)
-        self.write_button.pack(side="left", padx=10)
+        self.tree.bind("<Double-1>", self._edit_cell)
+        self.tree.bind("<Configure>", lambda _: self._cancel_edit())
+        self.tree.bind("<MouseWheel>", lambda _: self._cancel_edit())
 
         terminal_tools = ttk.Frame(outer)
         terminal_tools.grid(row=4, column=0, sticky="ew", pady=(0, 6))
@@ -214,9 +211,48 @@ class ParameterConsole:
         self.help_button.configure(state=state)
         idle = self.connected and self.pending is None
         self.read_button.configure(state="normal" if idle else "disabled")
-        editable = idle and bool(self.tree.selection())
-        self.write_button.configure(state="normal" if editable else "disabled")
-        self.edit_box.configure(state="normal" if editable else "disabled")
+        if self.edit_box is not None and not idle:
+            self._cancel_edit()
+
+    def _scroll_table(self, axis, *args):
+        self._cancel_edit()
+        getattr(self.tree, axis + "view")(*args)
+
+    def _cancel_edit(self, _=None):
+        if self.edit_box is not None:
+            self.edit_box.destroy()
+            self.edit_box = None
+        self.editing_name = None
+
+    def _edit_cell(self, event):
+        if self.tree.identify_region(event.x, event.y) != "cell":
+            return
+        if self.tree.identify_column(event.x) == "#4":
+            self._begin_cell_edit(self.tree.identify_row(event.y))
+            return "break"
+
+    def _begin_cell_edit(self, name):
+        self._cancel_edit()
+        if not self.connected or self.pending or name not in self.parameters:
+            return
+        bounds = self.tree.bbox(name, "value")
+        if not bounds:
+            return
+        self.tree.selection_set(name)
+        self.editing_name = name
+        parameter = self.parameters[name]
+        self.new_value.set(format_value(parameter.value, parameter.dtype))
+        self.edit_box = ttk.Entry(self.tree, textvariable=self.new_value)
+        x, y, width, height = bounds
+        self.edit_box.place(x=x, y=y, width=width, height=height)
+        self.edit_box.bind("<Return>", lambda _: self.write_parameter())
+        self.edit_box.bind("<Escape>", self._cancel_edit)
+        # Ignore a delayed FocusOut belonging to an editor already replaced.
+        self.edit_box.bind("<FocusOut>", lambda event: self._cancel_edit()
+                           if event.widget is self.edit_box else None)
+        self.edit_box.focus_set()
+        self.edit_box.selection_range(0, tk.END)
+        self.edit_box.icursor(tk.END)
 
     def _start_request(self, kind, name=None, value=None):
         if not self.connected or self.pending:
@@ -251,6 +287,8 @@ class ParameterConsole:
 
     def _select_parameter(self, _=None):
         selection = self.tree.selection()
+        if self.editing_name:
+            return
         if selection and selection[0] in self.parameters:
             parameter = self.parameters[selection[0]]
             self.selected_name.set(parameter.name)
@@ -261,6 +299,7 @@ class ParameterConsole:
         self._update_controls()
 
     def _render_table(self):
+        self._cancel_edit()
         selection = self.tree.selection()
         self.tree.delete(*self.tree.get_children())
         text = self.filter_text.get().lower().strip()
@@ -268,13 +307,14 @@ class ParameterConsole:
             if text and text not in f"{p.group} {name} {p.description}".lower():
                 continue
             self.tree.insert("", "end", iid=name, values=(p.group, name,
-                             "整型" if p.dtype == "int" else "浮点型", format_value(p.value, p.dtype),
+                             p.dtype, format_value(p.value, p.dtype),
                              f"{format_value(p.minimum, p.dtype)} ～ {format_value(p.maximum, p.dtype)}", p.description))
         self._apply_sort()
         if selection and self.tree.exists(selection[0]):
             self.tree.selection_set(selection[0])
 
     def _sort_heading(self, column):
+        self._cancel_edit()
         self.sort_reverse = not self.sort_reverse if self.sort_column == column else False
         self.sort_column = column
         labels = dict(zip(self.tree["columns"], ("分组", "参数名", "类型", "当前值", "允许范围", "说明")))
@@ -317,7 +357,7 @@ class ParameterConsole:
             elif self.pending["kind"] == "READ":
                 if kind == "BEGIN" and len(fields) == 4:
                     count = int(fields[1])
-                    if not 0 < count <= 64:
+                    if not 0 < count <= MAX_PARAMETERS:
                         raise ValueError("参数数量无效")
                     self.pending.update(count=count, profile=fields[0], storage=fields[2], source=fields[3])
                     self.received_parameters.clear()

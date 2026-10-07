@@ -36,68 +36,72 @@ static float V_cruise = 13;
 
 // PWM——OUTPUT
 
-const int pwm_channel1_rev = -1;
-const int pwm_channel2_rev = 1;
-const int pwm_channel3_rev = -1;
-const int pwm_channel4_rev = 1;
-const int pwm_channel5_rev = -1;
+int32_t pwm_channel1_rev = -1;
+int32_t pwm_channel2_rev = 1;
+int32_t pwm_channel3_rev = -1;
+int32_t pwm_channel4_rev = 1;
+int32_t pwm_channel5_rev = -1;
 
 // 相比旧基准，舵面安装 trim 增加 20 μs，以保持机械中位。
 // A机
-const float pwm_channel1_trim = 180;  // 减少是向上 安装偏置
-const float pwm_channel2_trim = -155; // 减少是向上
+#if defined TESTBED
+float pwm_channel1_trim = 160;
+float pwm_channel2_trim = -190;
+#else
+float pwm_channel1_trim = 180;  // 减少是向上 安装偏置
+float pwm_channel2_trim = -155; // 减少是向上
+#endif
 
 // 襟副翼微调
-const float pwm_channel1B_trim = 205;  // 减少是向上
-const float pwm_channel2B_trim = -20;  // 减少是向上
-const float pwm_channel1C_trim = 150;  // 减少是向上
-const float pwm_channel2C_trim = -152; // 减少是向上
-const float pwm_channel1D_trim = 122;  // 减少是向上
-const float pwm_channel2D_trim = -163; // 减少是向上
-const float pwm_channel1E_trim = 140;  // 减少是向上
-const float pwm_channel2E_trim = -170; // 减少是向上
-const float pwm_channel1F_trim = 154;  // 减少是向上
-const float pwm_channel2F_trim = -187; // 减少是向上
-const float pwm_channel1G_trim = 190;  // 减少是向上
-const float pwm_channel2G_trim = -170; // 减少是向上
+float pwm_channel1B_trim = 205;  // 减少是向上
+float pwm_channel2B_trim = -20;  // 减少是向上
+float pwm_channel1C_trim = 150;  // 减少是向上
+float pwm_channel2C_trim = -152; // 减少是向上
+float pwm_channel1D_trim = 122;  // 减少是向上
+float pwm_channel2D_trim = -163; // 减少是向上
+float pwm_channel1E_trim = 140;  // 减少是向上
+float pwm_channel2E_trim = -170; // 减少是向上
+float pwm_channel1F_trim = 154;  // 减少是向上
+float pwm_channel2F_trim = -187; // 减少是向上
+float pwm_channel1G_trim = 190;  // 减少是向上
+float pwm_channel2G_trim = -170; // 减少是向上
 
 // 升降舵微调，手动模式用
-const float pwm_channel3B_trim = 62;
-const float pwm_channel3C_trim = -30; // 对于子机也要修正
-const float pwm_channel3D_trim = 170;
-const float pwm_channel3E_trim = -30;
-const float pwm_channel3F_trim = 29;
-const float pwm_channel3G_trim = 200;
+float pwm_channel3B_trim = 62;
+float pwm_channel3C_trim = -30; // 对于子机也要修正
+float pwm_channel3D_trim = 170;
+float pwm_channel3E_trim = -30;
+float pwm_channel3F_trim = 29;
+float pwm_channel3G_trim = 200;
+
+#if defined TESTBED
+float pwm_channel3A_trim = 30;
+#else
+float pwm_channel3A_trim = 40;
+#endif
 
 // 当前飞机
 
-#if defined APLANE
-const float pwm_channel3_trim =
-    40; // A 机升降舵安装微调，增稳模式使用。
+#if defined TESTBED || defined APLANE
+float &pwm_channel3_trim =
+    pwm_channel3A_trim; // A 机升降舵安装微调，增稳模式使用。
 #elif defined BPLANE
-const float pwm_channel3_trim = pwm_channel3B_trim;
+float &pwm_channel3_trim = pwm_channel3B_trim;
 #elif defined CPLANE
-const float pwm_channel3_trim = pwm_channel3C_trim;
+float &pwm_channel3_trim = pwm_channel3C_trim;
 #elif defined DPLANE
-const float pwm_channel3_trim = pwm_channel3D_trim;
+float &pwm_channel3_trim = pwm_channel3D_trim;
 #elif defined EPLANE
-const float pwm_channel3_trim = pwm_channel3E_trim;
+float &pwm_channel3_trim = pwm_channel3E_trim;
 #elif defined FPLANE
-const float pwm_channel3_trim = pwm_channel3F_trim;
+float &pwm_channel3_trim = pwm_channel3F_trim;
 #elif defined GPLANE
-const float pwm_channel3_trim = pwm_channel3G_trim;
+float &pwm_channel3_trim = pwm_channel3G_trim;
 #endif
 
 // 油门以 1100 μs 为起点，输出中位相消，trim 保持原值。
-const float pwm_channel4_trim = 0;
-const float pwm_channel5_trim = 20;
-
-// 载机
-#if defined TESTBED
-const float pwm_channel1_trim = 160;  // 减少是向上 安装偏置
-const float pwm_channel2_trim = -190; // 减少是向上
-const float pwm_channel3_trim = 30;        // 减少是向上
-#endif
+float pwm_channel4_trim = 0;
+float pwm_channel5_trim = 20;
 
 static int outputpwm1, outputpwm2, outputpwm3, outputpwm4, outputpwm5;
 
@@ -235,48 +239,13 @@ static float Kp_yaw = 0.2;     // 偏航角速度比例增益。
 static float Ki_yaw = 0.05;    // 偏航角速度积分增益。
 static float Kd_yaw = 0.00000; // 偏航角速度微分增益；当前设为零。
 
-const FlightParameter *controlParameterTable(size_t &count) {
-  // Keep registration beside the private variables, without exporting them.
-  static const FlightParameter parameters[] = {
-      {"Kp_roll_angle", &Kp_roll_angle, 0, 10, "Attitude", "Roll angle P"},
-      {"Ki_roll_angle", &Ki_roll_angle, 0, 10, "Attitude", "Roll angle I"},
-      {"Kd_roll_angle", &Kd_roll_angle, 0, 1, "Attitude", "Roll angle D (controlANGLE only)"},
-      {"Kp_pitch_angle", &Kp_pitch_angle, 0, 10, "Attitude", "Pitch angle P"},
-      {"Ki_pitch_angle", &Ki_pitch_angle, 0, 10, "Attitude", "Pitch angle I"},
-      {"Kd_pitch_angle", &Kd_pitch_angle, 0, 1, "Attitude", "Pitch angle D (controlANGLE only)"},
-      {"B_loop_roll", &B_loop_roll, 0, 1, "Attitude", "Roll outer-loop filter coefficient"},
-      {"B_loop_pitch", &B_loop_pitch, 0, 1, "Attitude", "Pitch outer-loop coefficient"},
-      {"Kp_roll_rate", &Kp_roll_rate, 0, 10, "Attitude", "Roll rate P"},
-      {"Ki_roll_rate", &Ki_roll_rate, 0, 10, "Attitude", "Roll rate I"},
-      {"Kd_roll_rate", &Kd_roll_rate, 0, 1, "Attitude", "Roll rate D"},
-      {"Kff_roll_rate", &Kff_roll_rate, 0, 10, "Attitude", "Roll rate feedforward"},
-      {"Kp_pitch_rate", &Kp_pitch_rate, 0, 10, "Attitude", "Pitch rate P"},
-      {"Ki_pitch_rate", &Ki_pitch_rate, 0, 10, "Attitude", "Pitch rate I"},
-      {"Kd_pitch_rate", &Kd_pitch_rate, 0, 1, "Attitude", "Pitch rate D"},
-      {"Kff_pitch_rate", &Kff_pitch_rate, 0, 10, "Attitude", "Pitch rate feedforward"},
-      {"Kp_yaw", &Kp_yaw, 0, 10, "Attitude", "Yaw rate P"},
-      {"Ki_yaw", &Ki_yaw, 0, 10, "Attitude", "Yaw rate I"},
-      {"Kd_yaw", &Kd_yaw, 0, 1, "Attitude", "Yaw rate D"},
-      {"Kff_yaw_rate", &Kff_yaw_rate, 0, 10, "Attitude", "Yaw rate feedforward"},
-      {"Kp_Flap", &Kp_Flap, 0, 10, "Configuration", "Relative angle P"},
-      {"Kp_FLAP_RATE", &Kp_FLAP_RATE, 0, 10, "Configuration", "Relative rate P"},
-      {"Ki_FLAP_RATE", &Ki_FLAP_RATE, 0, 10, "Configuration", "Relative rate I"},
-      {"Kff_FLAP_RATE", &Kff_FLAP_RATE, 0, 10, "Configuration", "Relative rate feedforward"},
-      {"B_loop_FLAP", &B_loop_FLAP, 0, 1, "Configuration", "Relative outer-loop filter coefficient"},
-      {"indi_pitch_q_gain", &indi_pitch_q_gain, 0.01f, 1000, "INDI", "Pitch rate error gain (1/s)"},
-      {"indi_pitch_effectiveness", &indi_pitch_effectiveness, -10000, -0.001f, "INDI", "Elevator effectiveness (deg/s^2 per deg)"},
-      {"usb_throttle_debug", &localThrottleDebugSetting(), 0, 1, "Debug", "Throttle USB log: 0 off, 1 on (10 Hz)"},
-  };
-  count = sizeof(parameters) / sizeof(parameters[0]);
-  return parameters;
-}
 
 
 static float roll_IMU_prev, pitch_IMU_prev;
 
 // 滚转角控制指令滤波
 static float roll_PID_lpf = 0.0f;
-static const float roll_pid_lpf_fc = 7.0f; // 7hz指令滤波
+static float roll_pid_lpf_fc = 7.0f; // 7hz指令滤波
 static const float TWO_PI_F = 6.28318530718f;
 
 
@@ -359,6 +328,90 @@ float central_pitch = 0.0f;
 static const uint8_t num_DSM_channels = 6;
 
 // 按单机或编队构型，把手动指令或姿态控制量映射到各机归一化舵量。
+const FlightParameter *controlParameterTable(size_t &count) {
+  // Keep registration beside the private variables, without exporting them.
+  static const FlightParameter parameters[] = {
+      {"Kp_roll_angle", &Kp_roll_angle, 0, 10, "Attitude", "Roll angle P"},
+      {"Ki_roll_angle", &Ki_roll_angle, 0, 10, "Attitude", "Roll angle I"},
+      {"Kd_roll_angle", &Kd_roll_angle, 0, 1, "Attitude", "Roll angle D (controlANGLE only)"},
+      {"Kp_pitch_angle", &Kp_pitch_angle, 0, 10, "Attitude", "Pitch angle P"},
+      {"Ki_pitch_angle", &Ki_pitch_angle, 0, 10, "Attitude", "Pitch angle I"},
+      {"Kd_pitch_angle", &Kd_pitch_angle, 0, 1, "Attitude", "Pitch angle D (controlANGLE only)"},
+      {"B_loop_roll", &B_loop_roll, 0, 1, "Attitude", "Roll outer-loop filter coefficient"},
+      {"B_loop_pitch", &B_loop_pitch, 0, 1, "Attitude", "Pitch outer-loop coefficient"},
+      {"Kp_roll_rate", &Kp_roll_rate, 0, 10, "Attitude", "Roll rate P"},
+      {"Ki_roll_rate", &Ki_roll_rate, 0, 10, "Attitude", "Roll rate I"},
+      {"Kd_roll_rate", &Kd_roll_rate, 0, 1, "Attitude", "Roll rate D"},
+      {"Kff_roll_rate", &Kff_roll_rate, 0, 10, "Attitude", "Roll rate feedforward"},
+      {"Kp_pitch_rate", &Kp_pitch_rate, 0, 10, "Attitude", "Pitch rate P"},
+      {"Ki_pitch_rate", &Ki_pitch_rate, 0, 10, "Attitude", "Pitch rate I"},
+      {"Kd_pitch_rate", &Kd_pitch_rate, 0, 1, "Attitude", "Pitch rate D"},
+      {"Kff_pitch_rate", &Kff_pitch_rate, 0, 10, "Attitude", "Pitch rate feedforward"},
+      {"Kp_yaw", &Kp_yaw, 0, 10, "Attitude", "Yaw rate P"},
+      {"Ki_yaw", &Ki_yaw, 0, 10, "Attitude", "Yaw rate I"},
+      {"Kd_yaw", &Kd_yaw, 0, 1, "Attitude", "Yaw rate D"},
+      {"Kff_yaw_rate", &Kff_yaw_rate, 0, 10, "Attitude", "Yaw rate feedforward"},
+      {"Kp_Flap", &Kp_Flap, 0, 10, "Configuration", "Relative angle P"},
+      {"Kp_FLAP_RATE", &Kp_FLAP_RATE, 0, 10, "Configuration", "Relative rate P"},
+      {"Ki_FLAP_RATE", &Ki_FLAP_RATE, 0, 10, "Configuration", "Relative rate I"},
+      {"Kff_FLAP_RATE", &Kff_FLAP_RATE, 0, 10, "Configuration", "Relative rate feedforward"},
+      {"B_loop_FLAP", &B_loop_FLAP, 0, 1, "Configuration", "Relative outer-loop filter coefficient"},
+      {"indi_pitch_q_gain", &indi_pitch_q_gain, 0.01f, 1000, "INDI", "Pitch rate error gain (1/s)"},
+      {"indi_pitch_effectiveness", &indi_pitch_effectiveness, -10000, -0.001f, "INDI", "Elevator effectiveness (deg/s^2 per deg)"},
+      {"usb_throttle_debug", &localThrottleDebugSetting(), 0, 1, "Debug", "Throttle USB log: 0 off, 1 on (10 Hz)"},
+      {"k_Clp", &k_Clp, 0, 10, "Control", "Roll damping gain"},
+      {"i_limit", &i_limit, 0, 1000, "Control", "Controller integral limit"},
+      {"maxRoll", &maxRoll, 0, 180, "Control", "Maximum roll command (deg or deg/s)"},
+      {"maxPitch", &maxPitch, 0, 180, "Control", "Maximum pitch command (deg or deg/s)"},
+      {"maxYaw", &maxYaw, 0, 720, "Control", "Maximum yaw rate command (deg/s)"},
+      {"Trim_pitch_angle", &Trim_pitch_angle, -30, 30, "Control", "Local pitch command trim (deg)"},
+      {"roll_pid_lpf_fc", &roll_pid_lpf_fc, 0.1, 200, "Control", "Roll command filter cutoff (Hz)"},
+      {"roll_pid_dot_lpf_fc", &roll_pid_dot_lpf_fc, 0.1, 200, "Control", "Roll command derivative filter cutoff (Hz)"},
+      {"pitch_des_local_rate_lpf_fc", &pitch_des_local_rate_lpf_fc, 0.1, 200, "Control", "Local pitch command rate filter cutoff (Hz)"},
+      {"indi_pitch_pwm_to_deg_k", &indi_pitch_pwm_to_deg_k, 1e-05, 1, "INDI", "Elevator PWM-to-angle slope (deg/us)"},
+      {"indi_pitch_pwm_to_deg_b", &indi_pitch_pwm_to_deg_b, -1000, 1000, "INDI", "Elevator PWM-to-angle intercept (deg)"},
+      {"indi_pitch_servo_delay_s", &indi_pitch_servo_delay_s, 0, 0.2, "INDI", "Servo pure delay (s; delay line clamps at 63 samples)"},
+      {"indi_pitch_servo_tau_s", &indi_pitch_servo_tau_s, 0, 1, "INDI", "Servo time constant (s)"},
+      {"indi_pitch_deflection_min_deg", &indi_pitch_deflection_min_deg, -90, 0, "INDI", "Minimum elevator deflection (deg)"},
+      {"indi_pitch_deflection_max_deg", &indi_pitch_deflection_max_deg, 0, 90, "INDI", "Maximum elevator deflection (deg)"},
+      {"indi_pitch_rate_limit_deg_s", &indi_pitch_rate_limit_deg_s, 1, 5000, "INDI", "Elevator deflection rate limit (deg/s)"},
+      {"indi_pitch_cmd_lpf_fc_hz", &indi_pitch_cmd_lpf_fc_hz, 0, 200, "INDI", "Elevator command cutoff (Hz; 0 disables)"},
+      {"indi_pitch_pwm_min", &indi_pitch_pwm_min, 900, 1500, "INDI", "Minimum elevator PWM (us)"},
+      {"indi_pitch_pwm_max", &indi_pitch_pwm_max, 1500, 2100, "INDI", "Maximum elevator PWM (us)"},
+      {"pwm_channel1_rev", &pwm_channel1_rev, -1, 1, "Actuator", "Output direction: -1 reverse, +1 normal; zero rejected"},
+      {"pwm_channel2_rev", &pwm_channel2_rev, -1, 1, "Actuator", "Output direction: -1 reverse, +1 normal; zero rejected"},
+      {"pwm_channel3_rev", &pwm_channel3_rev, -1, 1, "Actuator", "Output direction: -1 reverse, +1 normal; zero rejected"},
+      {"pwm_channel4_rev", &pwm_channel4_rev, -1, 1, "Actuator", "Output direction: -1 reverse, +1 normal; zero rejected"},
+      {"pwm_channel5_rev", &pwm_channel5_rev, -1, 1, "Actuator", "Output direction: -1 reverse, +1 normal; zero rejected"},
+      {"pwm_channel1_trim", &pwm_channel1_trim, -500, 500, "Actuator", "Local/A channel mechanical trim (us)"},
+      {"pwm_channel2_trim", &pwm_channel2_trim, -500, 500, "Actuator", "Local/A channel mechanical trim (us)"},
+      {"pwm_channel4_trim", &pwm_channel4_trim, -500, 500, "Actuator", "Local/A channel mechanical trim (us)"},
+      {"pwm_channel5_trim", &pwm_channel5_trim, -500, 500, "Actuator", "Local/A channel mechanical trim (us)"},
+      {"pwm_channel3A_trim", &pwm_channel3A_trim, -500, 500, "Actuator", "A elevator mechanical trim (us)"},
+      {"pwm_channel1B_trim", &pwm_channel1B_trim, -500, 500, "Actuator", "B channel 1 mechanical trim (us)"},
+      {"pwm_channel2B_trim", &pwm_channel2B_trim, -500, 500, "Actuator", "B channel 2 mechanical trim (us)"},
+      {"pwm_channel3B_trim", &pwm_channel3B_trim, -500, 500, "Actuator", "B channel 3 mechanical trim (us)"},
+      {"pwm_channel1C_trim", &pwm_channel1C_trim, -500, 500, "Actuator", "C channel 1 mechanical trim (us)"},
+      {"pwm_channel2C_trim", &pwm_channel2C_trim, -500, 500, "Actuator", "C channel 2 mechanical trim (us)"},
+      {"pwm_channel3C_trim", &pwm_channel3C_trim, -500, 500, "Actuator", "C channel 3 mechanical trim (us)"},
+      {"pwm_channel1D_trim", &pwm_channel1D_trim, -500, 500, "Actuator", "D channel 1 mechanical trim (us)"},
+      {"pwm_channel2D_trim", &pwm_channel2D_trim, -500, 500, "Actuator", "D channel 2 mechanical trim (us)"},
+      {"pwm_channel3D_trim", &pwm_channel3D_trim, -500, 500, "Actuator", "D channel 3 mechanical trim (us)"},
+      {"pwm_channel1E_trim", &pwm_channel1E_trim, -500, 500, "Actuator", "E channel 1 mechanical trim (us)"},
+      {"pwm_channel2E_trim", &pwm_channel2E_trim, -500, 500, "Actuator", "E channel 2 mechanical trim (us)"},
+      {"pwm_channel3E_trim", &pwm_channel3E_trim, -500, 500, "Actuator", "E channel 3 mechanical trim (us)"},
+      {"pwm_channel1F_trim", &pwm_channel1F_trim, -500, 500, "Actuator", "F channel 1 mechanical trim (us)"},
+      {"pwm_channel2F_trim", &pwm_channel2F_trim, -500, 500, "Actuator", "F channel 2 mechanical trim (us)"},
+      {"pwm_channel3F_trim", &pwm_channel3F_trim, -500, 500, "Actuator", "F channel 3 mechanical trim (us)"},
+      {"pwm_channel1G_trim", &pwm_channel1G_trim, -500, 500, "Actuator", "G channel 1 mechanical trim (us)"},
+      {"pwm_channel2G_trim", &pwm_channel2G_trim, -500, 500, "Actuator", "G channel 2 mechanical trim (us)"},
+      {"pwm_channel3G_trim", &pwm_channel3G_trim, -500, 500, "Actuator", "G channel 3 mechanical trim (us)"},
+  };
+  count = sizeof(parameters) / sizeof(parameters[0]);
+  return parameters;
+}
+
+
 void controlMixer() {
   // 按单机或编队构型，将姿态控制量分配到各机舵面和油门。
   // 手动模式直接使用归一化遥控指令；舵机归一化中位为 0.5，油门范围为 0～1。

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "flight_config.h"
+#include <stdint.h>
 
 // 仅声明日志、执行器、通信等模块需要读取的控制状态；控制器内部量留在 control_modes.cpp。
 // PWM 单位为微秒，遥控通道值也按 PWM 微秒数表示。
@@ -8,30 +9,31 @@ extern float central_pitch;
 extern int channel_1_pwm, channel_2_pwm, channel_3_pwm, channel_4_pwm;
 extern int channel_5_pwm, channel_6_pwm, channel_7_pwm, channel_8_pwm;
 // 各通道方向系数与各机安装偏置。
-extern const int pwm_channel1_rev, pwm_channel2_rev, pwm_channel3_rev,
+extern int32_t pwm_channel1_rev, pwm_channel2_rev, pwm_channel3_rev,
     pwm_channel4_rev, pwm_channel5_rev;
-extern const float pwm_channel1B_trim, pwm_channel2B_trim;
-extern const float pwm_channel1C_trim, pwm_channel2C_trim;
-extern const float pwm_channel1D_trim, pwm_channel2D_trim;
-extern const float pwm_channel1E_trim, pwm_channel2E_trim;
-extern const float pwm_channel1F_trim, pwm_channel2F_trim;
-extern const float pwm_channel1G_trim, pwm_channel2G_trim;
-extern const float pwm_channel4_trim, pwm_channel5_trim;
+extern float pwm_channel1B_trim, pwm_channel2B_trim;
+extern float pwm_channel1C_trim, pwm_channel2C_trim;
+extern float pwm_channel1D_trim, pwm_channel2D_trim;
+extern float pwm_channel1E_trim, pwm_channel2E_trim;
+extern float pwm_channel1F_trim, pwm_channel2F_trim;
+extern float pwm_channel1G_trim, pwm_channel2G_trim;
+extern float pwm_channel4_trim, pwm_channel5_trim;
 extern float ailBrake_PWM;
 extern float D_ele_command_PWM_FF, E_ele_command_PWM_FF;
 extern float F_ele_command_PWM_FF, G_ele_command_PWM_FF;
 extern FlightMode currentMode;
 extern bool int_is_valid;
 extern bool force_manual;
-extern const float pwm_channel1_trim;
-extern const float pwm_channel2_trim;
-extern const float pwm_channel3B_trim;
-extern const float pwm_channel3C_trim;
-extern const float pwm_channel3D_trim;
-extern const float pwm_channel3E_trim;
-extern const float pwm_channel3F_trim;
-extern const float pwm_channel3G_trim;
-extern const float pwm_channel3_trim;
+extern float pwm_channel1_trim;
+extern float pwm_channel2_trim;
+extern float pwm_channel3B_trim;
+extern float pwm_channel3C_trim;
+extern float pwm_channel3D_trim;
+extern float pwm_channel3E_trim;
+extern float pwm_channel3F_trim;
+extern float pwm_channel3G_trim;
+extern float &pwm_channel3_trim;
+extern float pwm_channel3A_trim;
 // controlMixer() 输出的归一化控制量，供 actuator_output 缩放。
 extern float Aail1_scaled, Aail2_scaled, Aele_scaled, Athro_scaled, Arudd_scaled;
 extern float Bail1_scaled, Bail2_scaled, Bthro_scaled, Brudd_scaled;

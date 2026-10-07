@@ -12,10 +12,16 @@
 #include <errno.h>
 
 namespace {
-constexpr size_t MAX_PARAMETERS = 64;
-constexpr size_t LINE_SIZE = 256;
-constexpr size_t FILE_SIZE = 8192;
-const char *const paths[] = {"params0.cfg", "params1.cfg"};
+constexpr size_t MAX_PARAMETERS = 512;
+constexpr size_t LINE_SIZE = 512;
+// Plain decimal float32 text needs up to 56 bytes, including very small values.
+// 512 rows with names up to 96 bytes fit within 96 KiB, including the header.
+// Shared by read/write only after the file is closed.
+constexpr size_t FILE_SIZE = 98304;
+constexpr size_t VALUE_SIZE = 64;
+const char *const primaryPath = "params.cfg";
+const char *const backupPath = "params_backup.cfg";
+const char *const legacyPaths[] = {"params0.cfg", "params1.cfg"};
 
 #if defined APLANE
 #define PARAM_AIRCRAFT "A"
@@ -66,7 +72,7 @@ const char profile[] = PARAM_AIRCRAFT "-" PARAM_CONTROL "-" PARAM_SIZE "-"
 const FlightParameter *table;
 size_t count;
 bool storageReady;
-int activeSlot = -1;
+const char *activePath = nullptr;
 uint32_t generation;
 char rxLine[LINE_SIZE];
 size_t rxLength;
@@ -78,6 +84,12 @@ bool listing;
 uint32_t listId;
 double snapshot[MAX_PARAMETERS];
 double defaults[MAX_PARAMETERS];
+// Main-loop-only, non-reentrant service: large buffers must never live on stack.
+char fileData[FILE_SIZE];
+double candidate[MAX_PARAMETERS];
+double previous[MAX_PARAMETERS];
+double verified[MAX_PARAMETERS];
+bool fileSeen[MAX_PARAMETERS];
 const char *loadState = "DEFAULTS";
 
 // Bit inspection is intentional: the project enables -ffast-math, which can
@@ -108,6 +120,9 @@ bool parseUnsigned(const char *text, uint32_t &value) {
 }
 
 bool validValue(size_t index, double value) {
+  const size_t length = strlen(table[index].name);
+  if (length >= 4 && !strcmp(table[index].name + length - 4, "_rev") &&
+      value != -1 && value != 1) return false;
   return (table[index].integer || finiteFloat(static_cast<float>(value))) && value >= table[index].minimum &&
          value <= table[index].maximum;
 }
@@ -139,11 +154,43 @@ void formatValue(size_t index, double value, char *text, size_t capacity) {
   }
   const float original = static_cast<float>(value);
   // Shortest decimal that recovers exactly the same float32 bits.
+  char shortText[32];
   for (int digits = 1; digits <= 9; ++digits) {
-    snprintf(text, capacity, "%.*g", digits, value);
+    snprintf(shortText, sizeof(shortText), "%.*g", digits, value);
     float parsed;
-    if (parseFloat(text, parsed) && !memcmp(&parsed, &original, sizeof(float))) return;
+    if (parseFloat(shortText, parsed) && !memcmp(&parsed, &original, sizeof(float))) break;
   }
+  const char *exponent = strchr(shortText, 'e');
+  if (!exponent) {
+    snprintf(text, capacity, "%s", shortText);
+    return;
+  }
+  // Expand the rounded decimal text, preserving its digits without rounding
+  // the binary float again. No scientific notation in replies or SD files.
+  const bool negative = shortText[0] == '-';
+  const char *start = shortText + (negative ? 1 : 0);
+  char digits[16];
+  int length = 0, point = 0;
+  bool afterPoint = false;
+  for (const char *p = start; p < exponent; ++p) {
+    if (*p == '.') { afterPoint = true; continue; }
+    digits[length++] = *p;
+    if (!afterPoint) ++point;
+  }
+  point += atoi(exponent + 1);
+  size_t used = 0;
+  auto append = [&](char c) { if (used + 1 < capacity) text[used++] = c; };
+  if (negative) append('-');
+  if (point <= 0) {
+    append('0'); append('.');
+    for (int i = 0; i < -point; ++i) append('0');
+  }
+  for (int i = 0; i < length; ++i) {
+    if (i > 0 && i == point) append('.');
+    append(digits[i]);
+  }
+  for (int i = length; i < point; ++i) append('0');
+  text[used] = '\0';
 }
 
 uint32_t checksum(const char *bytes, size_t length) {
@@ -156,10 +203,11 @@ uint32_t checksum(const char *bytes, size_t length) {
   return ~crc;
 }
 
-// Exact names/order/count plus CRC prevent partial or mixed-profile loads.
-bool readSlot(int slot, double *values, uint32_t &sequence) {
-  char data[FILE_SIZE];
-  File file = SD.open(paths[slot], FILE_READ);
+// V3 declares its row count, allowing later added parameters to use defaults.
+// V1/V2 retain their original ordered-prefix validation.
+bool readParameterFile(const char *path, double *values, uint32_t &sequence) {
+  char (&data)[FILE_SIZE] = fileData;
+  File file = SD.open(path, FILE_READ);
   if (!file || file.size() == 0 || file.size() >= sizeof(data)) return false;
   const size_t length = file.size();
   const size_t read = file.read(reinterpret_cast<uint8_t *>(data), length);
@@ -189,12 +237,41 @@ bool readSlot(int slot, double *values, uint32_t &sequence) {
   snprintf(header, sizeof(header), "HFAFC_PARAMS_V1 %s", profile);
   const bool legacy = line && !strcmp(line, header);
   snprintf(header, sizeof(header), "HFAFC_PARAMS_V2 %s", profile);
-  if (!legacy && (!line || strcmp(line, header))) return false;
+  const bool v2 = line && !strcmp(line, header);
+  snprintf(header, sizeof(header), "HFAFC_PARAMS_V3 %s", profile);
+  const bool v3 = line && !strcmp(line, header);
+  if (!legacy && !v2 && !v3) return false;
   line = strtok_r(nullptr, "\n", &save);
   if (!line || strncmp(line, "GEN=", 4) || !parseUnsigned(line + 4, sequence))
     return false;
+  memcpy(values, defaults, count * sizeof(double));
+  if (v3) {
+    uint32_t declared;
+    line = strtok_r(nullptr, "\n", &save);
+    if (!line || strncmp(line, "COUNT=", 6) ||
+        !parseUnsigned(line + 6, declared) || declared == 0 || declared > count)
+      return false;
+    memset(fileSeen, 0, sizeof(fileSeen));
+    for (size_t row = 0; row < declared; ++row) {
+      line = strtok_r(nullptr, "\n", &save);
+      if (!line) return false;
+      char *equals = strchr(line, '=');
+      char *colon = strchr(line, ':');
+      if (!equals || !colon || colon > equals) return false;
+      *equals = *colon = '\0';
+      size_t index = 0;
+      while (index < count && strcmp(line, table[index].name)) ++index;
+      if (index == count || fileSeen[index] || strcmp(colon + 1, table[index].type()) ||
+          !parseValue(index, equals + 1, values[index])) return false;
+      fileSeen[index] = true;
+    }
+    return strtok_r(nullptr, "\n", &save) == nullptr;
+  }
   for (size_t i = 0; i < count; ++i) {
     line = strtok_r(nullptr, "\n", &save);
+    // Released registry had 27 floats plus one int; preserve those settings
+    // when upgrading to the extended table. Added fields keep compiled defaults.
+    if (!line && ((v2 && i == 28) || (legacy && i == 27))) return true;
     if (!line && legacy && table[i].integer) {
       // V1 contained the original float prefix; new integer settings use defaults.
       for (size_t j = i; j < count; ++j) {
@@ -214,14 +291,12 @@ bool readSlot(int slot, double *values, uint32_t &sequence) {
   return strtok_r(nullptr, "\n", &save) == nullptr;
 }
 
-bool saveSnapshot(const double *values) {
-  if (!storageReady) return false;
-  char data[FILE_SIZE];
-  const uint32_t nextGeneration = generation + 1;
-  size_t used = snprintf(data, sizeof(data), "HFAFC_PARAMS_V2 %s\nGEN=%lu\n",
-                         profile, static_cast<unsigned long>(nextGeneration));
+bool writeSnapshot(const char *path, const double *values, uint32_t sequence) {
+  char (&data)[FILE_SIZE] = fileData;
+  size_t used = snprintf(data, sizeof(data), "HFAFC_PARAMS_V3 %s\nGEN=%lu\nCOUNT=%u\n",
+                         profile, static_cast<unsigned long>(sequence), static_cast<unsigned>(count));
   for (size_t i = 0; i < count; ++i) {
-    char value[32];
+    char value[VALUE_SIZE];
     formatValue(i, values[i], value, sizeof(value));
     int n = snprintf(data + used, sizeof(data) - used, "%s:%s=%s\n",
                      table[i].name, table[i].type(), value);
@@ -233,22 +308,40 @@ bool saveSnapshot(const double *values) {
                    static_cast<unsigned long>(crc));
   if (n < 0 || static_cast<size_t>(n) >= sizeof(data) - used) return false;
   used += n;
-  const int target = activeSlot == 0 ? 1 : 0;
-  File file = SD.open(paths[target], FILE_WRITE_BEGIN);
+  File file = SD.open(path, FILE_WRITE_BEGIN);
   if (!file || !file.truncate(0)) return false;
   const size_t written = file.write(reinterpret_cast<const uint8_t *>(data), used);
   file.flush();
   file.close();
-  double verified[MAX_PARAMETERS];
   uint32_t verifiedGeneration = 0;
-  if (written != used || !readSlot(target, verified, verifiedGeneration) ||
-      verifiedGeneration != nextGeneration ||
+  if (written != used || !readParameterFile(path, verified, verifiedGeneration) ||
+      verifiedGeneration != sequence ||
       memcmp(values, verified, count * sizeof(double))) {
-    // Keep the previous slot intact. A torn new file fails CRC on next boot.
-    SD.remove(paths[target]);
+    // Remove an incomplete replacement; the other validated file remains intact.
+    SD.remove(path);
     return false;
   }
-  activeSlot = target;
+  return true;
+}
+
+bool saveSnapshot(const double *values) {
+  if (!storageReady) return false;
+  // Preserve the last successfully persisted values before replacing the primary.
+  // When boot recovered from backup, leave that backup intact.
+  if (activePath) {
+    uint32_t previousGeneration = 0;
+    if (!readParameterFile(activePath, previous, previousGeneration) ||
+        previousGeneration != generation) return false;
+    if (activePath != backupPath &&
+        !writeSnapshot(backupPath, previous, previousGeneration)) return false;
+  }
+  const uint32_t nextGeneration = generation + 1;
+  if (!writeSnapshot(primaryPath, values, nextGeneration)) {
+    // The primary may have been truncated; retry from the preserved backup.
+    if (activePath) activePath = backupPath;
+    return false;
+  }
+  activePath = primaryPath;
   generation = nextGeneration;
   loadState = "SAVED";
   return true;
@@ -309,14 +402,13 @@ void handleCommand(char *line) {
       error(id, "RANGE", "Value must be finite and within parameter bounds"); return;
     }
     if (!storageReady) { error(id, "NO_SD", "SD card unavailable; RAM unchanged"); return; }
-    double candidate[MAX_PARAMETERS];
     for (size_t i = 0; i < count; ++i) candidate[i] = table[i].read();
     candidate[index] = value;
     if (!saveSnapshot(candidate)) {
       error(id, "SD_WRITE", "SD save/verification failed; RAM unchanged"); return;
     }
     table[index].write(value);
-    char formatted[32];
+    char formatted[VALUE_SIZE];
     formatValue(index, value, formatted, sizeof(formatted));
     queueReply(id, "OK\t%s\t%s\t%s\tSAVED", table[index].name,
                table[index].type(), formatted);
@@ -329,7 +421,19 @@ void handleCommand(char *line) {
 void initializeParameterService(bool sdReady) {
   table = controlParameterTable(count);
   storageReady = sdReady && count > 0 && count <= MAX_PARAMETERS;
-  activeSlot = -1;
+  if (count > MAX_PARAMETERS) {
+    USBSerial.println("[PARAM] Registry exceeds 512 entries; service disabled");
+    return;
+  }
+  for (size_t i = 0; i < count; ++i) {
+    if (strlen(table[i].name) > 96) {
+      count = 0;
+      storageReady = false;
+      USBSerial.println("[PARAM] Parameter name exceeds 96 bytes; service disabled");
+      return;
+    }
+  }
+  activePath = nullptr;
   generation = 0;
   rxLength = txLength = listIndex = 0;
   rxOverflow = listing = false;
@@ -337,23 +441,35 @@ void initializeParameterService(bool sdReady) {
   if (!storageReady) {
     USBSerial.println("[PARAM] SD unavailable; using compiled defaults"); return;
   }
-  double first[MAX_PARAMETERS], second[MAX_PARAMETERS];
+  double *first = candidate, *second = previous;
   for (size_t i = 0; i < count; ++i) defaults[i] = table[i].read();
-  uint32_t sequence0 = 0, sequence1 = 0;
-  bool valid0 = readSlot(0, first, sequence0);
-  bool valid1 = readSlot(1, second, sequence1);
-  // Sequence comparison handles uint32 wrap without signed overflow.
-  const uint32_t difference = sequence1 - sequence0;
-  if (valid1 && (!valid0 || (difference != 0 && difference < 0x80000000UL))) {
-    activeSlot = 1;
-    generation = sequence1;
-    for (size_t i = 0; i < count; ++i) table[i].write(second[i]);
-  } else if (valid0) {
-    activeSlot = 0;
-    generation = sequence0;
-    for (size_t i = 0; i < count; ++i) table[i].write(first[i]);
+  // Named primary always takes precedence; backup is recovery only.
+  if (readParameterFile(primaryPath, first, generation)) {
+    activePath = primaryPath;
+  } else if (readParameterFile(backupPath, first, generation)) {
+    activePath = backupPath;
+  } else {
+    // Compatibility with existing alternating-slot files. Migration is deferred
+    // until the next successful SET; boot never writes or deletes files.
+    uint32_t sequence0 = 0, sequence1 = 0;
+    const bool valid0 = readParameterFile(legacyPaths[0], first, sequence0);
+    const bool valid1 = readParameterFile(legacyPaths[1], second, sequence1);
+    const uint32_t difference = sequence1 - sequence0;
+    if (valid1 && (!valid0 || (difference != 0 && difference < 0x80000000UL))) {
+      activePath = legacyPaths[1];
+      generation = sequence1;
+      memcpy(first, second, count * sizeof(double));
+    } else if (valid0) {
+      activePath = legacyPaths[0];
+      generation = sequence0;
+    }
   }
-  if (activeSlot >= 0) loadState = "LOADED";
+  if (activePath) {
+    for (size_t i = 0; i < count; ++i) table[i].write(first[i]);
+    loadState = "LOADED";
+  } else {
+    generation = 0;
+  }
   USBSerial.printf("[PARAM] %s: %s, %u parameters\n", profile, loadState,
                 static_cast<unsigned>(count));
 }
@@ -377,7 +493,7 @@ void pollParameterService() {
   if (listing) {
     if (listIndex < count) {
       const auto &p = table[listIndex];
-      char value[32], low[32], high[32];
+      char value[VALUE_SIZE], low[VALUE_SIZE], high[VALUE_SIZE];
       formatValue(listIndex, snapshot[listIndex], value, sizeof(value));
       formatValue(listIndex, p.minimum, low, sizeof(low));
       formatValue(listIndex, p.maximum, high, sizeof(high));
@@ -395,7 +511,7 @@ void pollParameterService() {
     int c = USBSerial.read();
     if (c == '\r') continue;
     if (c == '\n') {
-      if (rxOverflow) error(0, "LINE_TOO_LONG", "Command exceeds 255 bytes");
+      if (rxOverflow) error(0, "LINE_TOO_LONG", "Command exceeds 511 bytes");
       else {
         rxLine[rxLength] = '\0';
         handleCommand(rxLine);

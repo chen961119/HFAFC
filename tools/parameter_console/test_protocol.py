@@ -6,6 +6,14 @@ import struct
 class ProtocolTests(unittest.TestCase):
     def test_short_float_roundtrip_and_integer_type(self):
         self.assertEqual(format_value(0.200000003), "0.2")
+        self.assertEqual(format_value(0.00001), "0.00001")
+        self.assertEqual(format_value(0.0002), "0.0002")
+        self.assertEqual(format_value(1e20), "100000000000000000000")
+        for bits in (1, 0x00800000, 0x7f7fffff, 0x80000001, 0xff7fffff):
+            value = struct.unpack("<f", struct.pack("<I", bits))[0]
+            text = format_value(value)
+            self.assertNotIn("e", text.lower())
+            self.assertEqual(struct.pack("<f", float(text)), struct.pack("<f", value))
         for value in (0.11, 0.123456789, -113.65, 1e-25, -0.0):
             self.assertEqual(struct.pack("<f", value), struct.pack("<f", float(format_value(value))))
         p = parameter_from_fields(["flag", "int", "0", "-2147483648", "2147483647", "g", "d"])
@@ -14,6 +22,10 @@ class ProtocolTests(unittest.TestCase):
         for text in ("0.5", "1.0", "1e0", "2147483648", "nan"):
             with self.assertRaises(ValueError):
                 validate_edit(p, text)
+        direction = Parameter("pwm_channel3_rev", 1, -1, 1, "Actuator", "Direction", "int")
+        self.assertEqual(validate_edit(direction, "-1"), -1)
+        with self.assertRaises(ValueError):
+            validate_edit(direction, "0")
     def test_split_replies_mixed_with_logs(self):
         wire = ("1111\n调试日志\n@HFAFC\t3\tBEGIN\tF-TEAM-7-INDI-EXP\t1\tSD_READY\tLOADED\r\n"
                 "@HFAFC\t3\tVALUE\tKp_roll_angle\t0.25\t0\t10\tAttitude\tRoll P\n"

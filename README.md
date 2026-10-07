@@ -35,7 +35,7 @@
 
 ## USB 参数配置软件
 
-电脑端软件位于 `tools/parameter_console/`，提供 27 项浮点控制参数和 1 项整数调试开关读取/修改、SD 自动保存、列排序及支持十六进制显示的串口助手。双击 `tools/parameter_console/dist/HFAFCParameterConsole.exe` 可启动；源码启动、协议、SD 恢复见 [参数软件使用说明](tools/parameter_console/README.md)。飞控开机在 SD 初始化后自动加载参数，修改成功后下次控制周期使用新值。
+电脑端软件位于 `tools/parameter_console/`，提供 75 项参数读取/就地修改（最多支持 512 项）、SD 自动保存、列排序及支持十六进制显示的串口助手。参数类型显示为 `float` / `int`；双击当前值编辑，Enter 保存，Esc 取消。双击 `tools/parameter_console/dist/HFAFCParameterConsole.exe` 可启动；源码启动、协议、SD 恢复见 [参数软件使用说明](tools/parameter_console/README.md)。飞控开机在 SD 初始化后自动加载参数，修改成功后下次控制周期使用新值。
 
 ## PWM 中位与安装微调
 

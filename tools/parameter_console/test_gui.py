@@ -162,6 +162,28 @@ class GuiTests(unittest.TestCase):
         self.assertFalse(self.app.parameters)
         self.assertIn("不完整", self.app.status.get())
 
+    def test_complete_75_and_512_parameter_snapshots(self):
+        for count in (75, 512):
+            with self.subTest(count=count):
+                self.app.pending = {"id": count, "kind": "READ", "count": None}
+                self.app._handle_reply((count, "BEGIN", ["F", str(count), "SD_READY", "LOADED"]))
+                self.assertIsNotNone(self.app.pending)
+                for index in range(count):
+                    self.app._handle_reply((count, "VALUE", [f"p{index}", "float", "0.2", "0", "10", "Ground", "Tuning value"]))
+                self.app._handle_reply((count, "END", [str(count)]))
+                self.assertIsNone(self.app.pending)
+                self.assertEqual(len(self.app.parameters), count)
+                self.assertEqual(len(self.app.tree.get_children()), count)
+                self.assertEqual(self.app.tree.set(f"p{count - 1}", "value"), "0.2")
+                self.assertIn(f"已读取 {count} 项", self.app.status.get())
+        previous = dict(self.app.parameters)
+        for count in (0, 513):
+            self.app.pending = {"id": 900, "kind": "READ", "count": None}
+            self.app._handle_reply((900, "BEGIN", ["F", str(count), "SD_READY", "LOADED"]))
+            self.assertIsNone(self.app.pending)
+            self.assertIn("参数数量无效", self.app.status.get())
+            self.assertEqual(self.app.parameters, previous)
+
     def test_sort_float_display_and_integer_ack(self):
         self.app.parameters = {
             "p10": Parameter("p10", 0.200000003, 0, 10, "g", "ten"),
@@ -169,7 +191,7 @@ class GuiTests(unittest.TestCase):
         }
         self.app._render_table()
         self.assertEqual(self.app.tree.set("p10", "value"), "0.2")
-        self.assertEqual(self.app.tree.set("p2", "dtype"), "整型")
+        self.assertEqual(self.app.tree.set("p2", "dtype"), "int")
         self.app._sort_heading("name")
         self.assertEqual(self.app.tree.get_children(), ("p2", "p10"))
         self.app._sort_heading("name")
@@ -199,7 +221,7 @@ class GuiTests(unittest.TestCase):
         for size in ("760x520", "900x620", "1160x780", "760x520"):
             self.root.geometry(size)
             self.root.update()
-            for widget in (self.app.write_button,
+            for widget in (self.app.tree,
                            self.app.command_box, self.app.send_button):
                 self.assertTrue(widget.winfo_ismapped())
                 self.assertGreater(widget.winfo_height(), 5)
@@ -207,6 +229,33 @@ class GuiTests(unittest.TestCase):
                                      self.root.winfo_rooty() + self.root.winfo_height())
                 self.assertLessEqual(widget.winfo_rootx() + widget.winfo_width(),
                                      self.root.winfo_rootx() + self.root.winfo_width())
+
+    def test_inline_edit_selection_cancel_and_save(self):
+        self.root.deiconify()
+        self.app.port.set(f"socket://127.0.0.1:{self.device.port}")
+        self.app.toggle_connection()
+        self.wait_for(lambda: self.app.connected)
+        self.app.read_parameters()
+        self.wait_for(lambda: self.app.pending is None and bool(self.app.parameters))
+        self.app._begin_cell_edit("Kp_roll_angle")
+        self.app.edit_box.focus_force()
+        self.root.update()
+        self.assertIsNotNone(self.app.edit_box)
+        self.assertEqual(self.app.edit_box.master, self.app.tree)
+        self.assertTrue(self.app.edit_box.selection_present())
+        self.app.new_value.set("0.7")
+        self.app.edit_box.event_generate("<Escape>")
+        self.root.update()
+        self.assertIsNone(self.app.edit_box)
+        self.assertEqual(self.device.value, "0.25")
+        self.app._begin_cell_edit("Kp_roll_angle")
+        self.app.edit_box.focus_force()
+        self.root.update()
+        self.app.new_value.set("0.75")
+        self.app.edit_box.event_generate("<Return>")
+        self.wait_for(lambda: self.app.pending is None and self.device.value == "0.75")
+        self.assertIsNone(self.app.edit_box)
+        self.assertEqual(self.app.tree.set("Kp_roll_angle", "value"), "0.75")
 
 
 if __name__ == "__main__":

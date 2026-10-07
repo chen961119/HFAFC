@@ -60,9 +60,19 @@ void findMaxFileNumber() {
 
 // 初始化 SD 卡，并创建带表头的新日志文件。
 void initializeLogger() {
-  sdReady = SD.begin(BUILTIN_SDCARD);
+  // Some cards need time to return to their startup state after a warm reset.
+  // Retry only during setup; never stall the flight loop trying to remount SD.
+  for (unsigned attempt = 0; attempt < 3; ++attempt) {
+    if (attempt) {
+      SD.sdfs.end();
+      delay(100);
+    }
+    sdReady = SD.begin(BUILTIN_SDCARD);
+    if (sdReady) break;
+  }
   if (!sdReady) {
     USBSerial.println("Card failed, or not present");
+    return;
   } else {
     USBSerial.println("card initialized.");
   }

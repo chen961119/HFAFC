@@ -1,5 +1,6 @@
 """Line framing for parameter replies mixed with ordinary USB serial output."""
 from dataclasses import dataclass
+from decimal import Decimal
 import math
 import struct
 import re
@@ -23,9 +24,13 @@ def format_value(value, dtype="float"):
     number = struct.unpack("<f", bits)[0]
     for digits in range(1, 10):
         text = format(number, f".{digits}g")
-        if struct.pack("<f", float(text)) == bits:
-            return text
-    return text
+        try:
+            matches = struct.pack("<f", float(text)) == bits
+        except OverflowError:
+            matches = False
+        if matches:
+            return format(Decimal(text), "f")
+    return format(Decimal(text), "f")
 
 
 def parse_integer(text):
@@ -96,8 +101,10 @@ def parameter_from_fields(fields):
 def validate_edit(parameter: Parameter, text: str) -> float:
     if parameter.dtype == "int":
         value = parse_integer(text)
+        if parameter.name.endswith("_rev") and value not in (-1, 1):
+            raise ValueError("反向系数只能为 -1 或 1")
         if not parameter.minimum <= value <= parameter.maximum:
-            raise ValueError(f"允许范围：{parameter.minimum:g} ～ {parameter.maximum:g}")
+            raise ValueError(f"允许范围：{format_value(parameter.minimum, parameter.dtype)} ～ {format_value(parameter.maximum, parameter.dtype)}")
         return value
     try:
         value = float(text)
@@ -115,5 +122,5 @@ def validate_edit(parameter: Parameter, text: str) -> float:
     except (OverflowError, struct.error) as exc:
         raise ValueError("数值超过飞控 float32 的范围") from exc
     if not math.isfinite(value) or not minimum <= value <= maximum:
-        raise ValueError(f"允许范围：{parameter.minimum:g} ～ {parameter.maximum:g}")
+        raise ValueError(f"允许范围：{format_value(parameter.minimum)} ～ {format_value(parameter.maximum)}")
     return value

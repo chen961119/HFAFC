@@ -11,6 +11,7 @@ constexpr int FILE_WRITE_BEGIN = 2;
 struct MockDisk {
   std::map<std::string, std::string> files;
   bool failOpen = false;
+  int writesBeforeFailure = -1;
   bool shortWrite = false;
   bool shortRead = false;
   bool corruptRead = false;
@@ -31,7 +32,8 @@ struct File {
     return length;
   }
   size_t write(const uint8_t *source, size_t length) {
-    if (disk.shortWrite) length /= 2;
+    if (disk.shortWrite || disk.writesBeforeFailure == 0) length /= 2;
+    if (disk.writesBeforeFailure > 0) --disk.writesBeforeFailure;
     data->assign(reinterpret_cast<const char *>(source), length);
     return length;
   }
