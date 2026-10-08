@@ -8,11 +8,8 @@
 compile_commands.json
 .clangd/
 
-# Keep the shared VS Code recommendations and settings, ignore local state
-.vscode/*
-!.vscode/launch.json
-!.vscode/tasks.json
-!.vscode/extensions.json
+# VS Code settings are generated for each computer and stay local
+.vscode/
 
 # Local IDE metadata
 .idea/

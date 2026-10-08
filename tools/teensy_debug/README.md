@@ -1,7 +1,8 @@
 # TeensyDebug 板上调试
 
 程序在 Teensy 4.1 上运行，需要连接板子。安装 VS Code 的 PlatformIO 和 Microsoft C/C++ 扩展。
-任务使用参数软件的 Python 虚拟环境（含 pyserial）；未创建时先运行 `tools/parameter_console/start.cmd`。
+克隆仓库后，任意一次 PlatformIO 构建都会在本机生成 `.vscode/launch.json`、`tasks.json` 和 `extensions.json`。这些文件不进入 Git。也可以运行 `python tools/teensy_debug/configure_vscode.py` 手动生成；脚本会保留本机其他配置。
+调试任务使用 PlatformIO 自带的 Python（含 pyserial），无需参数软件的虚拟环境。
 
 1. 关闭占用板子串口的软件，连接 USB。
 2. 在“运行和调试”选择“TeensyDebug：编译、上传并调试”，按 F5。

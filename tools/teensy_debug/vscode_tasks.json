@@ -1,0 +1,21 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "TeensyDebug: upload",
+      "type": "process",
+      "command": "${env:USERPROFILE}/.platformio/penv/Scripts/python.exe",
+      "args": ["tools/teensy_debug/prepare.py"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": "$gcc"
+    },
+    {
+      "label": "TeensyDebug: attach",
+      "type": "process",
+      "command": "${env:USERPROFILE}/.platformio/penv/Scripts/python.exe",
+      "args": ["tools/teensy_debug/prepare.py", "--attach"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": "$gcc"
+    }
+  ]
+}

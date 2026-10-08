@@ -1,0 +1,51 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "TeensyDebug：编译、上传并调试",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/.pio/build/teensy41_debug/firmware.elf",
+      "cwd": "${workspaceFolder}",
+      "MIMode": "gdb",
+      "miDebuggerPath": "${env:USERPROFILE}/.platformio/packages/toolchain-gccarmnoneeabi-teensy/bin/arm-none-eabi-gdb.exe",
+      "targetArchitecture": "arm",
+      "stopAtConnect": true,
+      "externalConsole": false,
+      "launchCompleteCommand": "None",
+      "preLaunchTask": "TeensyDebug: upload",
+      "setupCommands": [
+        { "text": "set print elements 64" },
+        { "text": "set print symbol off" }
+      ],
+      "customLaunchSetupCommands": [
+        { "text": "cd ${workspaceFolder}" },
+        { "text": "file .pio/build/teensy41_debug/firmware.elf" },
+        { "text": "source .pio/teensydebug/connect.gdb" }
+      ]
+    },
+    {
+      "name": "TeensyDebug：连接现有调试固件",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/.pio/build/teensy41_debug/firmware.elf",
+      "cwd": "${workspaceFolder}",
+      "MIMode": "gdb",
+      "miDebuggerPath": "${env:USERPROFILE}/.platformio/packages/toolchain-gccarmnoneeabi-teensy/bin/arm-none-eabi-gdb.exe",
+      "targetArchitecture": "arm",
+      "stopAtConnect": true,
+      "externalConsole": false,
+      "launchCompleteCommand": "None",
+      "preLaunchTask": "TeensyDebug: attach",
+      "setupCommands": [
+        { "text": "set print elements 64" },
+        { "text": "set print symbol off" }
+      ],
+      "customLaunchSetupCommands": [
+        { "text": "cd ${workspaceFolder}" },
+        { "text": "file .pio/build/teensy41_debug/firmware.elf" },
+        { "text": "source .pio/teensydebug/connect.gdb" }
+      ]
+    }
+  ]
+}

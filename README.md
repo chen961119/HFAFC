@@ -36,6 +36,7 @@
 ## VS Code Teensy 板上断点调试
 
 连接 Teensy，打开“运行和调试”，选择“TeensyDebug：编译、上传并调试”，按 F5。程序在板上运行，单个 USB 串口专供 GDB 设置断点和查看变量；调试固件关闭普通 USB 输出和参数通信。使用参数软件时上传普通 `teensy41` 固件。详见 [板上调试说明](tools/teensy_debug/README.md)。
+克隆到新电脑后，先执行一次 PlatformIO 构建。本机的 `.vscode` 调试配置会自动生成，不纳入 Git。
 
 ## USB 参数配置软件
 
