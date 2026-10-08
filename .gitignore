@@ -37,7 +37,7 @@ Desktop.ini
 datalog*.txt
 
 # Desktop parameter console environment and Python caches
-tools/parameter_console/.venv/
-tools/parameter_console/build/
-tools/parameter_console/dist/
+*/.venv/
+*/build/
+*/dist/
 */__pycache__/
