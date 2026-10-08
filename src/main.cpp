@@ -81,7 +81,7 @@ void loop() {
   // getpinvBplusmini();
   controlMixer();
   
-  scaleCommands();
+  convertControlCommandsToPWM();
   prepareActuatorCommands();
   applyAndTransmitActuatorCommands();
 

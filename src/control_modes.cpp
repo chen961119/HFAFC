@@ -5,7 +5,6 @@
 #include "control_state.h"
 #include "control_allocation.h"
 #include "flight_clock.h"
-#include "radio_comm.h"
 #include "human_interface.h"
 #include "interaircraft_comm.h"
 #include "math_utils.h"
@@ -14,8 +13,6 @@
 
 int channel_1_pwm, channel_2_pwm, channel_3_pwm, channel_4_pwm, channel_5_pwm,
     channel_6_pwm, channel_7_pwm, channel_8_pwm;
-static int channel_1_pwm_prev, channel_2_pwm_prev, channel_3_pwm_prev,
-    channel_4_pwm_prev;
 
 FlightMode currentMode;
 FlightMode lastMode;
@@ -325,7 +322,6 @@ int s6_command_PWM, s7_command_PWM;
 static bool armedFly = false;
 
 float central_pitch = 0.0f;
-static const uint8_t num_DSM_channels = 6;
 
 // 按单机或编队构型，把手动指令或姿态控制量映射到各机归一化舵量。
 const FlightParameter *controlParameterTable(size_t &count) {
@@ -1874,62 +1870,6 @@ int PITCH_INDI_control() {
   // 18. 函数最终只返回一个独立计算好的升降舵 PWM。
   // 目前它不会自动接入现有控制链，只有你显式调用它时才会生效。
   return (int)(pwm_cmd + 0.5f);
-}
-
-// 按接收机类型读取各遥控通道并进行低通；更新的值供下一控制周期使用。
-void getCommands() {
-  // 读取当前接收机通道；PWM/PPM 由中断更新，SBUS 由库解析。
-  // 对关键通道做一阶低通后，供下一次控制周期使用。
-
-#if defined USE_PPM_RX || defined USE_PWM_RX
-  channel_1_pwm = getRadioPWM(1);
-  channel_2_pwm = getRadioPWM(2);
-  channel_3_pwm = getRadioPWM(3);
-  channel_4_pwm = getRadioPWM(4);
-  channel_5_pwm = getRadioPWM(5);
-  channel_6_pwm = getRadioPWM(6);
-
-#elif defined USE_SBUS_RX
-  if (sbus.read(&sbusChannels[0], &sbusFailSafe, &sbusLostFrame)) {
-    // 以下比例换算对应 Taranis-Plus 与 X4R-SB 的 SBUS 输出范围。
-    float scale = 0.615;
-    float bias = 895.0;
-    channel_1_pwm = sbusChannels[0] * scale + bias;
-    channel_2_pwm = sbusChannels[1] * scale + bias;
-    channel_3_pwm = sbusChannels[2] * scale + bias;
-    channel_4_pwm = sbusChannels[3] * scale + bias;
-    channel_5_pwm = sbusChannels[4] * scale + bias;
-    channel_6_pwm = sbusChannels[5] * scale + bias;
-    channel_7_pwm = sbusChannels[6] * scale + bias;
-    channel_8_pwm = sbusChannels[7] * scale + bias;
-  }
-
-#elif defined USE_DSM_RX
-  if (DSM.timedOut(micros())) {
-    // USBSerial.println("*** DSM RX TIMED OUT ***");
-  } else if (DSM.gotNewFrame()) {
-    uint16_t values[num_DSM_channels];
-    DSM.getChannelValues(values, num_DSM_channels);
-
-    channel_1_pwm = values[0];
-    channel_2_pwm = values[1];
-    channel_3_pwm = values[2];
-    channel_4_pwm = values[3];
-    channel_5_pwm = values[4];
-    channel_6_pwm = values[5];
-  }
-#endif
-
-  // 对关键遥控通道做一阶低通，并保存本次值。
-  float b = 0.7; // 系数越小平滑越强，响应越慢。
-  channel_1_pwm = (1.0 - b) * channel_1_pwm_prev + b * channel_1_pwm;
-  channel_2_pwm = (1.0 - b) * channel_2_pwm_prev + b * channel_2_pwm;
-  channel_3_pwm = (1.0 - b) * channel_3_pwm_prev + b * channel_3_pwm;
-  channel_4_pwm = (1.0 - b) * channel_4_pwm_prev + b * channel_4_pwm;
-  channel_1_pwm_prev = channel_1_pwm;
-  channel_2_pwm_prev = channel_2_pwm;
-  channel_3_pwm_prev = channel_3_pwm;
-  channel_4_pwm_prev = channel_4_pwm;
 }
 
 // 检测遥控 PWM 是否越过设定范围；任一通道异常时回退到安全值。

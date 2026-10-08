@@ -76,7 +76,7 @@ int main() {
   currentMode = STABLIZE_MODE_NO_I;
   // Scaling never overwrites a final output from the previous cycle.
   Aail1_PWM = 1777; Aele_PWM = 1666;
-  scaleCommands();
+  convertControlCommandsToPWM();
   assert(Aail1_PWM == 1777 && Aele_PWM == 1666);
   Local_ail1_PWM = 1620; Local_ail2_PWM = 1430;
   Local_ele_PWM = 1570; Local_ele_ff_PWM = 0;
@@ -93,7 +93,7 @@ int main() {
 #endif
   Aele_scaled = 0.15f; Ail_Clp = 11;
   B_ele_control_ff_us = 17; C_ele_control_ff_us = -19;
-  scaleCommands(); prepareActuatorCommands();
+  convertControlCommandsToPWM(); prepareActuatorCommands();
 #ifdef TEST_MASTER
   // 150 us elevator control / 6 * 0.4 = 10 us logical flap compensation.
   close(Aail1_PWM, 1680 + direction*21); close(Aail2_PWM, 1345 + direction*21);

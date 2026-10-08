@@ -101,8 +101,8 @@ void commandSafeActuatorPositions() {
   servo7.write(0);
 }
 
-// 将归一化控制量换算为微秒尺度的逻辑控制量；此阶段尚未应用 rev 或 trim。
-void scaleCommands() {
+// 将归一化控制指令转换为微秒尺度的逻辑 PWM；此阶段尚未应用 rev 或 trim。
+void convertControlCommandsToPWM() {
   // *_control_us 以 1500 为逻辑零点，不是最终物理 PWM。
   // 对输出做行程限幅，避免超过执行器允许范围。
   Aail1_control_us = PWM_CENTER_US + 1000 * (Aail1_scaled);

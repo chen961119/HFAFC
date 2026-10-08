@@ -59,11 +59,11 @@
 
 方向舵 trim 为 20；油门起点仍为 1100，trim 保持 0。TESTBED 的副翼和升降舵 trim 同样增加 20。
 
-`scaleCommands()` 的 A 机舵面逻辑限幅同步移至 1080～1900，以保留原来的相对行程；油门、Servo 硬件脉宽范围及 INDI 的物理 PWM 限幅保持原值。INDI 的绝对 PWM 到舵角标定继续使用原拟合系数，其中立初始化使用 `PWM_CENTER_US + pwm_channel3_trim`。
+`convertControlCommandsToPWM()` 的 A 机舵面逻辑限幅同步移至 1080～1900，以保留原来的相对行程；油门、Servo 硬件脉宽范围及 INDI 的物理 PWM 限幅保持原值。INDI 的绝对 PWM 到舵角标定继续使用原拟合系数，其中立初始化使用 `PWM_CENTER_US + pwm_channel3_trim`。
 
 从机升降舵到副翼的补偿从本地俯仰 PWM 中扣除本机机械中位，并还原为控制方向，再按各副翼 rev 转成物理偏移。机械 trim 不参与控制补偿，零控制量时补偿为零。去除 trim 后的日志 PWM 以 1500 为基准。
 
-迁移对比使用原、新 `scaleCommands()` 和执行器实现，检查 A 主机与 F 从机分支各 42 组相同归一化指令，包括中立、刹车、控制模式和饱和情况：中立指令一致，测试中的 PWM 指令最大差异为 1 μs，来自中位变化后的整数截断。
+迁移对比使用旧版 `scaleCommands()`、当前 `convertControlCommandsToPWM()` 和执行器实现，检查 A 主机与 F 从机分支各 42 组相同归一化指令，包括中立、刹车、控制模式和饱和情况：中立指令一致，测试中的 PWM 指令最大差异为 1 μs，来自中位变化后的整数截断。
 
 ## 执行器指令准备
 
@@ -71,12 +71,12 @@
 
 ```cpp
 controlMixer();
-scaleCommands();
+convertControlCommandsToPWM();
 prepareActuatorCommands();
 applyAndTransmitActuatorCommands();
 ```
 
-`control_modes.cpp` 输出归一化的 `*_scaled` 和未反向的升降舵前馈偏移。`scaleCommands()` 位于 `actuator_output.cpp`，更新私有的 `*_control_us`：它们以 1500 为逻辑零点，尚未加机械 trim 或应用反向，不能当作最终 PWM。
+`control_modes.cpp` 输出归一化的 `*_scaled` 和未反向的升降舵前馈偏移。`convertControlCommandsToPWM()` 位于 `actuator_output.cpp`，更新私有的 `*_control_us`：它们以 1500 为逻辑零点，尚未加机械 trim 或应用反向，不能当作最终 PWM。
 
 `prepareActuatorCommands()` 按 `1500 + 安装trim + rev × 控制偏移` 生成最终的 `*_PWM`。A 主机准备本机输出和 B～G 子机缓存；从机使用已反向、已加 trim 的接收 PWM，只对新增本地补偿和阻尼应用 rev。升降舵前馈由主机反向一次，接收端直接叠加。
 

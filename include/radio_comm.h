@@ -16,4 +16,6 @@ extern DSM1024 DSM;
 #endif
 
 void radioSetup();
+// 读取接收机通道并更新滤波后的 channel_*_pwm，供下一控制周期使用。
+void getCommands();
 unsigned long getRadioPWM(int ch_num);

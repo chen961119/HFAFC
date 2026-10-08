@@ -3,6 +3,7 @@
 // 原始实现来自 Nicholas Rehm 的 dRehmFlight 项目，后续按本项目硬件接线调整。
 #include <Arduino.h>
 #include "radio_comm.h"
+#include "control_state.h"
 #include <SBUS.h>  // SBUS 接收机驱动。
 // 以下引脚用于 PWM 接收机；SBUS 实际使用 SbusSerial，DSM 使用 DsmSerial。
 const int ch1Pin = 15; // 通道 1：滚转
@@ -15,6 +16,9 @@ const int PPM_Pin = 23;
 
 static unsigned long rising_edge_start_1, rising_edge_start_2, rising_edge_start_3, rising_edge_start_4, rising_edge_start_5, rising_edge_start_6;
 static unsigned long channel_1_raw, channel_2_raw, channel_3_raw, channel_4_raw, channel_5_raw, channel_6_raw;
+static int channel_1_pwm_prev, channel_2_pwm_prev, channel_3_pwm_prev,
+    channel_4_pwm_prev;
+
 static int ppm_counter = 0;
 static unsigned long time_ms = 0;
 
@@ -27,6 +31,7 @@ bool sbusLostFrame;
 #endif
 #if defined USE_DSM_RX
 DSM1024 DSM;
+static const uint8_t num_DSM_channels = 6;
 #endif
 
 // 按编译配置初始化 PPM、PWM、SBUS 或 DSM 接收机及相应中断。
@@ -68,6 +73,62 @@ void radioSetup() {
   #else
     // 未配置接收机类型时不执行初始化。
   #endif
+}
+
+// 按接收机类型读取各遥控通道并进行低通；更新的值供下一控制周期使用。
+void getCommands() {
+  // 读取当前接收机通道；PWM/PPM 由中断更新，SBUS 由库解析。
+  // 对关键通道做一阶低通后，供下一次控制周期使用。
+
+#if defined USE_PPM_RX || defined USE_PWM_RX
+  channel_1_pwm = getRadioPWM(1);
+  channel_2_pwm = getRadioPWM(2);
+  channel_3_pwm = getRadioPWM(3);
+  channel_4_pwm = getRadioPWM(4);
+  channel_5_pwm = getRadioPWM(5);
+  channel_6_pwm = getRadioPWM(6);
+
+#elif defined USE_SBUS_RX
+  if (sbus.read(&sbusChannels[0], &sbusFailSafe, &sbusLostFrame)) {
+    // 以下比例换算对应 Taranis-Plus 与 X4R-SB 的 SBUS 输出范围。
+    float scale = 0.615;
+    float bias = 895.0;
+    channel_1_pwm = sbusChannels[0] * scale + bias;
+    channel_2_pwm = sbusChannels[1] * scale + bias;
+    channel_3_pwm = sbusChannels[2] * scale + bias;
+    channel_4_pwm = sbusChannels[3] * scale + bias;
+    channel_5_pwm = sbusChannels[4] * scale + bias;
+    channel_6_pwm = sbusChannels[5] * scale + bias;
+    channel_7_pwm = sbusChannels[6] * scale + bias;
+    channel_8_pwm = sbusChannels[7] * scale + bias;
+  }
+
+#elif defined USE_DSM_RX
+  if (DSM.timedOut(micros())) {
+    // USBSerial.println("*** DSM RX TIMED OUT ***");
+  } else if (DSM.gotNewFrame()) {
+    uint16_t values[num_DSM_channels];
+    DSM.getChannelValues(values, num_DSM_channels);
+
+    channel_1_pwm = values[0];
+    channel_2_pwm = values[1];
+    channel_3_pwm = values[2];
+    channel_4_pwm = values[3];
+    channel_5_pwm = values[4];
+    channel_6_pwm = values[5];
+  }
+#endif
+
+  // 对关键遥控通道做一阶低通，并保存本次值。
+  float b = 0.7; // 系数越小平滑越强，响应越慢。
+  channel_1_pwm = (1.0 - b) * channel_1_pwm_prev + b * channel_1_pwm;
+  channel_2_pwm = (1.0 - b) * channel_2_pwm_prev + b * channel_2_pwm;
+  channel_3_pwm = (1.0 - b) * channel_3_pwm_prev + b * channel_3_pwm;
+  channel_4_pwm = (1.0 - b) * channel_4_pwm_prev + b * channel_4_pwm;
+  channel_1_pwm_prev = channel_1_pwm;
+  channel_2_pwm_prev = channel_2_pwm;
+  channel_3_pwm_prev = channel_3_pwm;
+  channel_4_pwm_prev = channel_4_pwm;
 }
 
 // 读取 PWM/PPM 中断缓存的指定通道脉宽；通道号为 1～6，返回值单位为 μs。
