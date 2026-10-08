@@ -62,7 +62,6 @@ void loop() {
 
   updateFlightClock();
 
-  armedStatus();
   getBMI088data();
   Madgwick();
   getAngularACC();

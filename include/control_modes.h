@@ -8,7 +8,6 @@ void controlANGLE2();
 int PITCH_INDI_control();
 void controlMixer();
 void failSafe();
-void armedStatus();
 void increase_Clp();
 void controlFlapMotion();
 void commandMotors();

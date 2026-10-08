@@ -318,9 +318,6 @@ float Gail1_scaled, Gail2_scaled, Gele_scaled, Gthro_scaled, Grudd_scaled;
 
 int s6_command_PWM, s7_command_PWM;
 
-// 飞行解锁状态。
-static bool armedFly = false;
-
 float central_pitch = 0.0f;
 
 // 按单机或编队构型，把手动指令或姿态控制量映射到各机归一化舵量。
@@ -1076,14 +1073,6 @@ central_pitch=-45.0*coeroll*roll_PID;
   s7_command_scaled = 0;
 }
 
-// 根据遥控通道 5 与通道 1 的阈值设置解锁标志；当前通道映射需与实际接线核对。
-void armedStatus() {
-  // 通道 5 低于 1500 μs 且通道 1 低于 1050 μs 时标记为已解锁。
-  // 当前映射下通道 1 是滚转；若本意是低油门解锁，需核对该判断条件。
-  if ((channel_5_pwm < 1500) && (channel_1_pwm < 1050)) {
-    armedFly = true;
-  }
-}
 
 // 将遥控 PWM 归一化并限幅，生成油门、姿态角和角速度期望及手动直通量。
 void getDesState() { // 调整了通道顺序
