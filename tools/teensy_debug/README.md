@@ -24,7 +24,8 @@ TeensyDebug 使用软件断点，单步和部分指令支持存在限制。此�
 需要降低其他模块的优化时，在 `build_flags.py` 的 `selected` 集合中添加对应源码路径，再编译上传；不要直接将全部依赖和硬件核心设为无优化。
 调试时不能用循环耗时代表正常固件性能。VS Code 的停止按钮只断开调试连接，重新从头运行请重新上传或让板子重新上电。
 
-依赖固定到 [TeensyDebug 官方仓库](https://github.com/ftrias/TeensyDebug) 的指定提交。
+调试依赖使用仓库内 `tools/teensy_debug/vendor/TeensyDebug` 的源码，来自 [TeensyDebug 官方仓库](https://github.com/ftrias/TeensyDebug) 的 `e496fdc44fbaf3eb96f6248ee8a97df18f64c8e1` 提交。它只用于 `teensy41_debug` 环境，新电脑构建时无需再从 GitHub 安装此库。
+如果旧电脑或旧检出中留下了缺少库清单的 `.pio/libdeps/teensy41_debug/TeensyDebug`，F5 的准备脚本会清理这个不完整副本，再从仓库内源码安装。
 
 ## 本次板上验证
 

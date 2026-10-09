@@ -1,7 +1,9 @@
 """Build/upload matching firmware and locate Teensy's single USB serial port."""
 import argparse
+import os
 from pathlib import Path
 import shutil
+import stat
 import subprocess
 import time
 import sys
@@ -11,11 +13,33 @@ from serial.tools import list_ports
 ROOT = Path(__file__).resolve().parents[2]
 
 
+def repair_teensydebug_cache():
+    """Discard an incomplete generated package so PlatformIO can reinstall it."""
+    package = ROOT / ".pio" / "libdeps" / "teensy41_debug" / "TeensyDebug"
+    if not package.is_dir():
+        return
+    if any((package / name).is_file() for name in
+           ("library.json", "library.properties", "module.json")):
+        return
+    # Never follow a junction/symlink or remove a directory outside this project.
+    resolved_package = package.resolve()
+    if (package.is_symlink() or ROOT.resolve() not in resolved_package.parents
+            or resolved_package.parent != package.parent.resolve()):
+        raise RuntimeError(f"Unsafe TeensyDebug cache path: {package}")
+    print("Removing incomplete TeensyDebug install from .pio/libdeps.", flush=True)
+    def clear_readonly(function, path, _error):
+        os.chmod(path, stat.S_IWRITE)
+        function(path)
+
+    shutil.rmtree(package, onerror=clear_readonly)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--attach", action="store_true")
     args = parser.parse_args()
     if not args.attach:
+        repair_teensydebug_cache()
         pio = shutil.which("platformio") or str(
             Path.home() / ".platformio/penv/Scripts/platformio.exe"
         )
