@@ -8,6 +8,8 @@
 #include <Wire.h>
 #include "interaircraft_comm.h"
 #include "sensor_processing.h"
+#include "flight_lock.h"
+#include "actuator_output.h"
 
 namespace {
 // 按键相关
@@ -76,7 +78,6 @@ const unsigned char logo[] PROGMEM = {
 
 unsigned long lastdispTime = 0;
 unsigned int displayfreq = 10; // 显示屏帧率。
-bool isdisplay = 1;
 
 unsigned long blink_counter, blink_delay;
 bool blinkAlternate;
@@ -205,7 +206,7 @@ void displayfilenum() {
 // 按显示频率刷新相对转角及姿态角；关闭显示时直接返回。
 void displayAttitude() {
 
-  if (!isdisplay && imuCalibrationValid()) {
+  if (!isFlightLocked()) {
     return;
   }
   float invFreq = 1.0 / displayfreq * 1000000.0;
@@ -236,8 +237,12 @@ void displayAttitude() {
   display.fillRect(30, 0, 50, 8, SSD1306_BLACK);
   display.setCursor(0, 0);
   display.print("Relat: ");
-  display.print(relativeAngle_ready, 1);
-  display.print((char)247); // 度符号°
+  if (rotateSensorValid()) {
+    display.print(relativeAngle_ready, 1);
+    display.print((char)247); // 度符号°
+  } else {
+    display.print("ERR");
+  }
 
   // 第二行：滚转角
   display.setTextSize(1);
@@ -288,7 +293,7 @@ void displaythumbsup() {
   display.clearDisplay();
 }
 
-// 处理 36、31 号按键：短按转角清零，长按切换显示或触发 IMU 标定。
+// 处理 36、31 号按键：短按转角清零，长按切换锁定/显示或触发 IMU 标定。
 // 使用 millis() 判断按压时长，触发校准时会阻塞主循环。
 void ProcessButtonState() {
 
@@ -322,7 +327,8 @@ void ProcessButtonState() {
       (millis() - buttonPressTime >= LONG_PRESS_TIME)) {
     longPressActive = true;
     USBSerial.println("长按一次");
-    isdisplay = !isdisplay;
+    setFlightLocked(!isFlightLocked());
+    if (isFlightLocked()) commandSafeActuatorPositions();
   }
 
   // 5. 重置长按状态
@@ -358,6 +364,9 @@ void ProcessButtonState() {
     // delay(500);
     USBSerial.println("1s开始校准IMU");
     // delay(500);
+    // 标定会阻塞主循环；先锁定并立即写出安装中位。
+    setFlightLocked(true);
+    commandSafeActuatorPositions();
     calculate_IMU_error();
     USBSerial.println("校准IMU完成");
     // delay(500);

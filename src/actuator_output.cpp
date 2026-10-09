@@ -3,6 +3,8 @@
 #include "control_modes.h"
 #include "debug_print.h"
 #include "flight_config.h"
+#include "flight_lock.h"
+#include "actuator_pwm_limits.h"
 #include "control_state.h"
 #include "interaircraft_comm.h"
 #include <Servo.h>
@@ -84,22 +86,23 @@ void attachActuators() {
   servo1.attach(servo1Pin, 900, 2100);// 左副翼
   servo2.attach(servo2Pin, 900, 2100);// 右副翼
   servo3.attach(servo3Pin, 900, 2100);// 升降
-  servo4.attach(servo4Pin, 900, 2100);// 油门
   servo5.attach(servo5Pin, 900, 2100);// 方向
   servo6.attach(servo6Pin, 900, 2100);
   servo7.attach(servo7Pin, 900, 2100);
+  // 电调最后接入 Servo 定时器，并立即写入锁定脉宽。
+  servo4.attach(servo4Pin, 900, 2100);// 油门
+  commandSafeActuatorPositions();
 }
 
-// 上电后先将舵面置中位、油门及预留通道置零。
+// 上电和锁定时的固定物理位置，不应用 rev 或控制量。
 void commandSafeActuatorPositions() {
-  // 上电初始化：舵面回中，油门与预留通道置低。
-  servo1.write(90);// 左副翼
-  servo2.write(90);// 右副翼
-  servo3.write(90);// 升降
-  servo4.write(0);// 油门
-  servo5.write(90);// 方向
-  servo6.write(0);
-  servo7.write(0);
+  servo1.writeMicroseconds(lockedActuatorPwm(pwm_channel1_trim));
+  servo2.writeMicroseconds(lockedActuatorPwm(pwm_channel2_trim));
+  servo3.writeMicroseconds(lockedActuatorPwm(pwm_channel3_trim));
+  servo4.writeMicroseconds(lockedActuatorPwm(pwm_channel4_trim));
+  servo5.writeMicroseconds(lockedActuatorPwm(pwm_channel5_trim));
+  servo6.writeMicroseconds(PWM_SERVO_MIN_US);
+  servo7.writeMicroseconds(PWM_SERVO_MIN_US);
 }
 
 // 将归一化控制指令转换为微秒尺度的逻辑 PWM；此阶段尚未应用 rev 或 trim。
@@ -109,47 +112,47 @@ void convertControlCommandsToPWM() {
   Aail1_control_us = PWM_CENTER_US + 1000 * (Aail1_scaled);
   Aail2_control_us = PWM_CENTER_US + 1000 * (Aail2_scaled);
   Aele_control_us = PWM_CENTER_US + 1000 * (Aele_scaled);
-  Athro_control_us = 1100 + 1000 * (Athro_scaled);
+  Athro_control_us = 1000 + 1000 * (Athro_scaled);
   Arudd_control_us = PWM_CENTER_US + 1000 * (Arudd_scaled);
 
   Bail1_control_us = PWM_CENTER_US + 1000 * (Bail1_scaled);
   Bail2_control_us = PWM_CENTER_US + 1000 * (Bail2_scaled);
-  Bthro_control_us = 1100 + 1000 * (Bthro_scaled);
+  Bthro_control_us = 1000 + 1000 * (Bthro_scaled);
   Brudd_control_us = PWM_CENTER_US + 1000 * (Brudd_scaled);
   B_ele_control_us_manual = PWM_CENTER_US + 1000 * (Aele_scaled) +
                              0.5 * 1000 * (Bail1_scaled + Bail2_scaled) / 2;
 
   Cail1_control_us = PWM_CENTER_US + 1000 * (Cail1_scaled);
   Cail2_control_us = PWM_CENTER_US + 1000 * (Cail2_scaled);
-  Cthro_control_us = 1100 + 1000 * (Cthro_scaled);
+  Cthro_control_us = 1000 + 1000 * (Cthro_scaled);
   Crudd_control_us = PWM_CENTER_US + 1000 * (Crudd_scaled);
   C_ele_control_us_manual = PWM_CENTER_US + 1000 * (Aele_scaled) +
                              0.5 * 1000 * (Cail1_scaled + Cail2_scaled) / 2;
 
   Dail1_control_us = PWM_CENTER_US + 1000 * (Dail1_scaled);
   Dail2_control_us = PWM_CENTER_US + 1000 * (Dail2_scaled);
-  Dthro_control_us = 1100 + 1000 * (Dthro_scaled);
+  Dthro_control_us = 1000 + 1000 * (Dthro_scaled);
   Drudd_control_us = PWM_CENTER_US + 1000 * (Drudd_scaled);
   D_ele_control_us_manual = PWM_CENTER_US + 1000 * (Aele_scaled) +
                              0.5 * 1000 * (Dail1_scaled + Dail2_scaled) / 2;
 
   Eail1_control_us = PWM_CENTER_US + 1000 * (Eail1_scaled);
   Eail2_control_us = PWM_CENTER_US + 1000 * (Eail2_scaled);
-  Ethro_control_us = 1100 + 1000 * (Ethro_scaled);
+  Ethro_control_us = 1000 + 1000 * (Ethro_scaled);
   Erudd_control_us = PWM_CENTER_US + 1000 * (Erudd_scaled);
   E_ele_control_us_manual = PWM_CENTER_US + 1000 * (Aele_scaled) +
                              0.5 * 1000 * (Eail1_scaled + Eail2_scaled) / 2;
 
   Fail1_control_us = PWM_CENTER_US + 1000 * (Fail1_scaled);
   Fail2_control_us = PWM_CENTER_US + 1000 * (Fail2_scaled);
-  Fthro_control_us = 1100 + 1000 * (Fthro_scaled);
+  Fthro_control_us = 1000 + 1000 * (Fthro_scaled);
   Frudd_control_us = PWM_CENTER_US + 1000 * (Frudd_scaled);
   F_ele_control_us_manual = PWM_CENTER_US + 1000 * (Aele_scaled) +
                              0.5 * 1000 * (Fail1_scaled + Fail2_scaled) / 2;
 
   Gail1_control_us = PWM_CENTER_US + 1000 * (Gail1_scaled);
   Gail2_control_us = PWM_CENTER_US + 1000 * (Gail2_scaled);
-  Gthro_control_us = 1100 + 1000 * (Gthro_scaled);
+  Gthro_control_us = 1000 + 1000 * (Gthro_scaled);
   Grudd_control_us = PWM_CENTER_US + 1000 * (Grudd_scaled);
   G_ele_control_us_manual = PWM_CENTER_US + 1000 * (Aele_scaled) +
                              0.5 * 1000 * (Gail1_scaled + Gail2_scaled) / 2;
@@ -160,7 +163,7 @@ void convertControlCommandsToPWM() {
   Aail1_control_us = constrain(Aail1_control_us, PWM_SURFACE_MIN_US, PWM_SURFACE_MAX_US);
   Aail2_control_us = constrain(Aail2_control_us, PWM_SURFACE_MIN_US, PWM_SURFACE_MAX_US);
   Aele_control_us = constrain(Aele_control_us, PWM_SURFACE_MIN_US, PWM_SURFACE_MAX_US); // 贵的飞机限幅
-  Athro_control_us = constrain(Athro_control_us, 1100, 1920);
+  Athro_control_us = constrain(Athro_control_us, 1000, 2000);
   Arudd_control_us = constrain(Arudd_control_us, PWM_SURFACE_MIN_US, PWM_SURFACE_MAX_US);
   s6_command_PWM = constrain(s6_command_PWM, 0, 180);
   s7_command_PWM = constrain(s7_command_PWM, 0, 180);
@@ -342,6 +345,19 @@ void prepareLocalElevatorCommand() {
 
 // 直接应用已准备好的物理 PWM，再发送或转发机间数据。
 void applyAndTransmitActuatorCommands() {
+  if (isFlightLocked()) {
+    ail1_PWM = lockedActuatorPwm(pwm_channel1_trim);
+    ail2_PWM = lockedActuatorPwm(pwm_channel2_trim);
+    ele_PWM = lockedActuatorPwm(pwm_channel3_trim);
+    thro_PWM = lockedActuatorPwm(pwm_channel4_trim);
+    rudd_PWM = lockedActuatorPwm(pwm_channel5_trim);
+  } else {
+    ail1_PWM = limitActuatorPwm(ail1_PWM, lockedActuatorPwm(pwm_channel1_trim));
+    ail2_PWM = limitActuatorPwm(ail2_PWM, lockedActuatorPwm(pwm_channel2_trim));
+    ele_PWM = limitActuatorPwm(ele_PWM, lockedActuatorPwm(pwm_channel3_trim));
+    thro_PWM = limitActuatorPwm(thro_PWM, lockedActuatorPwm(pwm_channel4_trim));
+    rudd_PWM = limitActuatorPwm(rudd_PWM, lockedActuatorPwm(pwm_channel5_trim));
+  }
   servo1.writeMicroseconds(ail1_PWM);
   servo2.writeMicroseconds(ail2_PWM);
   servo3.writeMicroseconds(ele_PWM);

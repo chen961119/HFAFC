@@ -48,8 +48,8 @@ static ReceivedCommandData recvData;
 static uint16_t bufIndex = 0;
 static bool frameStarted = false;
 float Local_pitch_des;
-// 未收到上级命令前保持 1100 μs 的逻辑低油门。
-int Local_thro_control_us = 1100 - PWM_CENTER_US;
+// 未收到上级命令前保持 1000 μs 的逻辑低油门。
+int Local_thro_control_us = 1000 - PWM_CENTER_US;
 int Local_ail1_control_us, Local_ail2_control_us, Local_rudd_control_us,
     Local_ele_control_us, Local_ele_ff_control_us;
 float phiB_raw, phiC_raw, phiD_raw, phiE_raw, phiF_raw, phiG_raw;
@@ -110,6 +110,9 @@ void sendPreparedChildCommands(bool intIsValid) {
 
 // 从机取出本机指令后，保留更远子机的数据并沿所在侧继续转发。
 void forwardReceivedChildCommands(bool intIsValid) {
+  // 启动时接收缓存全零；零油门偏移代表 1500 μs，不能作为低油门转发。
+  // 首帧到达前让下游保持自身 -500 μs 的默认偏移（逻辑 PWM 1000 μs）。
+  if (!parentCommandReceived) return;
 #if defined BPLANE || defined DPLANE || defined FPLANE
   for (unsigned int i = 0; i < 4; ++i) {
     servoCommandsleft[i] = 0;

@@ -4,6 +4,8 @@
 #include "flight_clock.h"
 #include "math_utils.h"
 #include "MS4525.h"
+#include "MT6701.h"
+#include <cmath>
 #include <EEPROM.h>
 #include <cstring>
 #include <Wire.h>
@@ -523,7 +525,13 @@ float relativeAngle_raw, relativeAngle_ready, relativeAngle_offset;
 const int eepromAddress1 = 100;
 
 
-String serialBuffer = "";
+namespace {
+MT6701 angleSensor(Wire1);
+bool angleReadValid = false;
+bool angleReadAttempted = false;
+unsigned long angleReadAttemptTime = 0;
+constexpr unsigned long ANGLE_RETRY_INTERVAL_US = 20000;
+} // namespace
 
 
 // 空速
@@ -579,7 +587,11 @@ float MagX_9250, MagY_9250, MagZ_9250;
 float MagX_prev_9250, MagY_prev_9250, MagZ_prev_9250;
 
 // 从 EEPROM 地址 100 恢复转角传感器清零偏置。
-void loadRotateSensorOffset() { EEPROM.get(eepromAddress1, relativeAngle_offset); }
+void loadRotateSensorOffset() {
+  EEPROM.get(eepromAddress1, relativeAngle_offset);
+  if (!std::isfinite(relativeAngle_offset) || relativeAngle_offset < 0 ||
+      relativeAngle_offset >= 360) relativeAngle_offset = 0;
+}
 // 调用空速传感器驱动进行零点标定。
 void calibrateAirspeedSensor() { airspeedSensor.calib(); }
 
@@ -991,42 +1003,41 @@ void initBAROMETER() {
 }
 
 
-// 从 AngleSensorSerial 解析以换行结束的 Angle 文本，并按机位约定更新相对转角。
-void getRotateSensor1() // 每个飞机都要做的
-{
-  // AngleSensorSerial 接收以换行结束的 "Angle:" 文本帧；不同机位采用不同角度正方向。
-
-  while (AngleSensorSerial.available() > 0) {
-    // USBSerial.println("sbb");
-    char incomingChar = AngleSensorSerial.read();
-
-    if (incomingChar == '\n') { // 检测到行结束符
-      if (serialBuffer.startsWith("Angle:")) {
-        String angleStr = serialBuffer.substring(6); // 提取 "X.YYY"
-        relativeAngle_raw = angleStr.toFloat();
-
-        // 打印到硬件串口（调试）
-        // USBSerial.print("Received Angle: ");
-        // USBSerial.print(relativeAngle_raw, 3);
-        // USBSerial.println("°");
-      }
-      serialBuffer = "";               // 清空缓冲区
-    } else if (incomingChar != '\r') { // 忽略 \r
-      serialBuffer += incomingChar;
-    }
-  }
-
-#if defined CPLANE || defined EPLANE || defined GPLANE
-  relativeAngle_ready = (relativeAngle_raw - relativeAngle_offset);
-#elif defined APLANE || defined BPLANE || defined DPLANE
-  relativeAngle_ready = -(relativeAngle_raw - relativeAngle_offset);
-#endif
+// MT6701 接入屏幕所在 Wire1 总线；初始化一次，不在采样时重设总线。
+void initializeRotateSensor() {
+  Wire1.begin();
+  Wire1.setClock(100000);
+  angleReadValid = false;
+  angleReadAttempted = false;
+  getRotateSensor1();
 }
 
+bool rotateSensorValid() { return angleReadValid; }
+
+// 每周期读取绝对角，减去本机零点并处理跨越 0/360 度的夹角。
+void getRotateSensor1() {
+  const unsigned long now = micros();
+  if (!angleReadValid && angleReadAttempted &&
+      now - angleReadAttemptTime < ANGLE_RETRY_INTERVAL_US) return;
+  angleReadAttempted = true;
+  angleReadAttemptTime = now;
+  float angle;
+  angleReadValid = angleSensor.readAngle(angle);
+  if (!angleReadValid) return; // 保持最后有效角度，屏幕通过状态显示 ERR。
+  relativeAngle_raw = angle;
+#if defined CPLANE || defined EPLANE || defined GPLANE
+  constexpr bool reverse = false;
+#else // A/B/D/F 的安装正方向相反。
+  constexpr bool reverse = true;
+#endif
+  relativeAngle_ready = MT6701::relativeAngle(angle, relativeAngle_offset, reverse);
+}
 
 // 将当前原始转角设为新零点，并将偏置写入 EEPROM 地址 100。
 void ResetRotateSensor() {
+  if (!angleReadValid) return; // 未连接或读取失败时不覆盖已保存零点。
   relativeAngle_offset = relativeAngle_raw;         // 计算新偏移量
+  relativeAngle_ready = 0;
   EEPROM.put(eepromAddress1, relativeAngle_offset); // 存储到 EEPROM
   USBSerial.println("Zero Set! Offset: " + String(relativeAngle_offset));
 }

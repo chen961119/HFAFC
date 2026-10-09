@@ -85,6 +85,8 @@ void initializeAngularAccelerationFilters();
 void getAngularACC();
 void getbarodata();
 void initBAROMETER();
+void initializeRotateSensor();
+bool rotateSensorValid();
 void getRotateSensor1();
 void ResetRotateSensor();
 void loadRotateSensorOffset();

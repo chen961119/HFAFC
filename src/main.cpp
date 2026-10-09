@@ -36,6 +36,7 @@ void setup() {
   initializeParameterService(loggerSdReady());
   initBAROMETER();
   loadRotateSensorOffset();
+  initializeRotateSensor();
   loadImuCalibration();
   prepareActuatorPower();
   displayAircraftIdentity();
@@ -68,6 +69,7 @@ void loop() {
   getIMUdata_EXT();
   increase_Clp();
   getairspeed();
+  getRotateSensor1();
   getDesState();
   ProcessButtonState();
   displayAttitude();
