@@ -13,25 +13,27 @@ from serial.tools import list_ports
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def repair_teensydebug_cache():
-    """Discard an incomplete generated package so PlatformIO can reinstall it."""
-    package = ROOT / ".pio" / "libdeps" / "teensy41_debug" / "TeensyDebug"
-    if not package.is_dir():
+def repair_library_cache():
+    """Discard incomplete project dependencies before PlatformIO scans them."""
+    cache = ROOT / ".pio" / "libdeps" / "teensy41_debug"
+    if not cache.is_dir():
         return
-    if any((package / name).is_file() for name in
-           ("library.json", "library.properties", "module.json")):
-        return
-    # Never follow a junction/symlink or remove a directory outside this project.
-    resolved_package = package.resolve()
-    if (package.is_symlink() or ROOT.resolve() not in resolved_package.parents
-            or resolved_package.parent != package.parent.resolve()):
-        raise RuntimeError(f"Unsafe TeensyDebug cache path: {package}")
-    print("Removing incomplete TeensyDebug install from .pio/libdeps.", flush=True)
+    # The failed package can be any direct or transitive library, not just TeensyDebug.
+    manifests = ("library.json", "library.properties", "module.json")
     def clear_readonly(function, path, _error):
         os.chmod(path, stat.S_IWRITE)
         function(path)
 
-    shutil.rmtree(package, onerror=clear_readonly)
+    for package in cache.iterdir():
+        if not package.is_dir() or any((package / name).is_file() for name in manifests):
+            continue
+        # Never follow a junction/symlink or remove a directory outside this project.
+        resolved_package = package.resolve()
+        if (package.is_symlink() or ROOT.resolve() not in resolved_package.parents
+                or resolved_package.parent != cache.resolve()):
+            raise RuntimeError(f"Unsafe library cache path: {package}")
+        print(f"Removing incomplete PlatformIO library: {package.name}", flush=True)
+        shutil.rmtree(package, onerror=clear_readonly)
 
 
 def main():
@@ -39,7 +41,10 @@ def main():
     parser.add_argument("--attach", action="store_true")
     args = parser.parse_args()
     if not args.attach:
-        repair_teensydebug_cache()
+        vendor_manifest = ROOT / "tools/teensy_debug/vendor/TeensyDebug/library.properties"
+        if not vendor_manifest.is_file():
+            raise RuntimeError(f"Vendored TeensyDebug manifest is missing: {vendor_manifest}")
+        repair_library_cache()
         pio = shutil.which("platformio") or str(
             Path.home() / ".platformio/penv/Scripts/platformio.exe"
         )
@@ -48,10 +53,16 @@ def main():
             cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             text=True, errors="replace")
         missing_board = False
+        missing_manifest = False
         for line in process.stdout:
             print(line, end="", flush=True)
             missing_board |= "No Teensy boards were found" in line
+            missing_manifest |= "MissingPackageManifestError" in line
         if process.wait():
+            if missing_manifest:
+                raise RuntimeError("PlatformIO still found a library without a manifest. "
+                                   "Check the library name printed by the cache repair step "
+                                   "and share the full build output.")
             raise RuntimeError("Firmware build/upload failed.")
         if missing_board:
             print("Uploader is waiting: press PROGRAM on the connected Teensy.", flush=True)
