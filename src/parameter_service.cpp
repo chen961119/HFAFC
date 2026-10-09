@@ -90,7 +90,16 @@ double candidate[MAX_PARAMETERS];
 double previous[MAX_PARAMETERS];
 double verified[MAX_PARAMETERS];
 bool fileSeen[MAX_PARAMETERS];
+const char *fileNames[MAX_PARAMETERS];
 const char *loadState = "DEFAULTS";
+
+struct MigrationStats {
+  size_t matched;
+  size_t defaultsUsed;
+  size_t skipped;
+};
+
+MigrationStats loadStats;
 
 // Bit inspection is intentional: the project enables -ffast-math, which can
 // optimize away ordinary isfinite() checks. Reject NaN/Inf before comparisons.
@@ -203,9 +212,13 @@ uint32_t checksum(const char *bytes, size_t length) {
   return ~crc;
 }
 
-// V3 declares its row count, allowing later added parameters to use defaults.
+// V3 restores valid rows by name; retired or changed rows use compiled defaults.
 // V1/V2 retain their original ordered-prefix validation.
-bool readParameterFile(const char *path, double *values, uint32_t &sequence) {
+bool readParameterFile(const char *path, double *values, uint32_t &sequence,
+                       bool *needsMigration = nullptr,
+                       MigrationStats *stats = nullptr) {
+  if (needsMigration) *needsMigration = false;
+  MigrationStats parsedStats{0, count, 0};
   char (&data)[FILE_SIZE] = fileData;
   File file = SD.open(path, FILE_READ);
   if (!file || file.size() == 0 || file.size() >= sizeof(data)) return false;
@@ -241,6 +254,7 @@ bool readParameterFile(const char *path, double *values, uint32_t &sequence) {
   snprintf(header, sizeof(header), "HFAFC_PARAMS_V3 %s", profile);
   const bool v3 = line && !strcmp(line, header);
   if (!legacy && !v2 && !v3) return false;
+  if (needsMigration && !v3) *needsMigration = true;
   line = strtok_r(nullptr, "\n", &save);
   if (!line || strncmp(line, "GEN=", 4) || !parseUnsigned(line + 4, sequence))
     return false;
@@ -249,35 +263,60 @@ bool readParameterFile(const char *path, double *values, uint32_t &sequence) {
     uint32_t declared;
     line = strtok_r(nullptr, "\n", &save);
     if (!line || strncmp(line, "COUNT=", 6) ||
-        !parseUnsigned(line + 6, declared) || declared == 0 || declared > count)
+        !parseUnsigned(line + 6, declared) || declared == 0 || declared > MAX_PARAMETERS)
       return false;
+    if (needsMigration && declared != count) *needsMigration = true;
     memset(fileSeen, 0, sizeof(fileSeen));
     for (size_t row = 0; row < declared; ++row) {
       line = strtok_r(nullptr, "\n", &save);
       if (!line) return false;
       char *equals = strchr(line, '=');
       char *colon = strchr(line, ':');
-      if (!equals || !colon || colon > equals) return false;
+      if (!equals || !colon || colon >= equals || colon == line || !equals[1]) return false;
       *equals = *colon = '\0';
+      if (strcmp(colon + 1, "float") && strcmp(colon + 1, "int")) return false;
+      for (size_t earlier = 0; earlier < row; ++earlier)
+        if (!strcmp(line, fileNames[earlier])) return false;
+      fileNames[row] = line;
       size_t index = 0;
       while (index < count && strcmp(line, table[index].name)) ++index;
-      if (index == count || fileSeen[index] || strcmp(colon + 1, table[index].type()) ||
-          !parseValue(index, equals + 1, values[index])) return false;
+      if (index == count) {
+        ++parsedStats.skipped;
+        if (needsMigration) *needsMigration = true;
+        continue;
+      }
+      if (fileSeen[index]) return false;
       fileSeen[index] = true;
+      if (needsMigration && index != row) *needsMigration = true;
+      if (strcmp(colon + 1, table[index].type()) ||
+          !parseValue(index, equals + 1, values[index])) {
+        values[index] = defaults[index];
+        ++parsedStats.skipped;
+        if (needsMigration) *needsMigration = true;
+      } else {
+        ++parsedStats.matched;
+        --parsedStats.defaultsUsed;
+      }
     }
-    return strtok_r(nullptr, "\n", &save) == nullptr;
+    if (strtok_r(nullptr, "\n", &save) != nullptr) return false;
+    if (stats) *stats = parsedStats;
+    return true;
   }
   for (size_t i = 0; i < count; ++i) {
     line = strtok_r(nullptr, "\n", &save);
     // Released registry had 27 floats plus one int; preserve those settings
     // when upgrading to the extended table. Added fields keep compiled defaults.
-    if (!line && ((v2 && i == 28) || (legacy && i == 27))) return true;
+    if (!line && ((v2 && i == 28) || (legacy && i == 27))) {
+      if (stats) *stats = parsedStats;
+      return true;
+    }
     if (!line && legacy && table[i].integer) {
       // V1 contained the original float prefix; new integer settings use defaults.
       for (size_t j = i; j < count; ++j) {
         if (!table[j].integer) return false;
         values[j] = defaults[j];
       }
+      if (stats) *stats = parsedStats;
       return true;
     }
     if (!line) return false;
@@ -287,8 +326,12 @@ bool readParameterFile(const char *path, double *values, uint32_t &sequence) {
     char key[128];
     snprintf(key, sizeof(key), legacy ? "%s" : "%s:%s", table[i].name, table[i].type());
     if (strcmp(line, key) || !parseValue(i, equals + 1, values[i])) return false;
+    ++parsedStats.matched;
+    --parsedStats.defaultsUsed;
   }
-  return strtok_r(nullptr, "\n", &save) == nullptr;
+  if (strtok_r(nullptr, "\n", &save) != nullptr) return false;
+  if (stats) *stats = parsedStats;
+  return true;
 }
 
 bool writeSnapshot(const char *path, const double *values, uint32_t sequence) {
@@ -324,7 +367,32 @@ bool writeSnapshot(const char *path, const double *values, uint32_t sequence) {
   return true;
 }
 
-bool saveSnapshot(const double *values) {
+// Keep the exact validated old file as a rollback copy during schema migration.
+bool copyValidatedSnapshot(const char *sourcePath, const char *destinationPath,
+                           const double *expectedValues, uint32_t expectedGeneration) {
+  File source = SD.open(sourcePath, FILE_READ);
+  if (!source || source.size() == 0 || source.size() >= sizeof(fileData)) return false;
+  const size_t length = source.size();
+  const size_t read = source.read(reinterpret_cast<uint8_t *>(fileData), length);
+  source.close();
+  if (read != length) return false;
+  File destination = SD.open(destinationPath, FILE_WRITE_BEGIN);
+  if (!destination || !destination.truncate(0)) return false;
+  const size_t written = destination.write(reinterpret_cast<const uint8_t *>(fileData), length);
+  destination.flush();
+  destination.close();
+  uint32_t verifiedGeneration = 0;
+  if (written != length ||
+      !readParameterFile(destinationPath, verified, verifiedGeneration) ||
+      verifiedGeneration != expectedGeneration ||
+      memcmp(expectedValues, verified, count * sizeof(double))) {
+    SD.remove(destinationPath);
+    return false;
+  }
+  return true;
+}
+
+bool saveSnapshot(const double *values, bool preserveStoredFile = false) {
   if (!storageReady) return false;
   // Preserve the last successfully persisted values before replacing the primary.
   // When boot recovered from backup, leave that backup intact.
@@ -333,7 +401,9 @@ bool saveSnapshot(const double *values) {
     if (!readParameterFile(activePath, previous, previousGeneration) ||
         previousGeneration != generation) return false;
     if (activePath != backupPath &&
-        !writeSnapshot(backupPath, previous, previousGeneration)) return false;
+        !(preserveStoredFile
+              ? copyValidatedSnapshot(activePath, backupPath, previous, previousGeneration)
+              : writeSnapshot(backupPath, previous, previousGeneration))) return false;
   }
   const uint32_t nextGeneration = generation + 1;
   if (!writeSnapshot(primaryPath, values, nextGeneration)) {
@@ -343,7 +413,7 @@ bool saveSnapshot(const double *values) {
   }
   activePath = primaryPath;
   generation = nextGeneration;
-  loadState = "SAVED";
+  loadState = preserveStoredFile ? "MIGRATED" : "SAVED";
   return true;
 }
 
@@ -390,9 +460,11 @@ void handleCommand(char *line) {
     listId = id;
     listIndex = 0;
     listing = true;
-    queueReply(id, "BEGIN\t%s\t%u\t%s\t%s", profile,
+    queueReply(id, "BEGIN\t%s\t%u\t%s\t%s\t%u\t%u\t%u", profile,
                static_cast<unsigned>(count), storageReady ? "SD_READY" : "NO_SD",
-               loadState);
+               loadState, static_cast<unsigned>(loadStats.matched),
+               static_cast<unsigned>(loadStats.defaultsUsed),
+               static_cast<unsigned>(loadStats.skipped));
   } else if (!strcmp(tokens[1], "SET") && tokenCount == 5) {
     size_t index = 0;
     while (index < count && strcmp(tokens[3], table[index].name)) ++index;
@@ -438,37 +510,46 @@ void initializeParameterService(bool sdReady) {
   rxLength = txLength = listIndex = 0;
   rxOverflow = listing = false;
   loadState = "DEFAULTS";
+  loadStats = {0, count, 0};
   if (!storageReady) {
     USBSerial.println("[PARAM] SD unavailable; using compiled defaults"); return;
   }
   double *first = candidate, *second = previous;
   for (size_t i = 0; i < count; ++i) defaults[i] = table[i].read();
   // Named primary always takes precedence; backup is recovery only.
-  if (readParameterFile(primaryPath, first, generation)) {
+  bool needsMigration = false;
+  if (readParameterFile(primaryPath, first, generation, &needsMigration, &loadStats)) {
     activePath = primaryPath;
-  } else if (readParameterFile(backupPath, first, generation)) {
+  } else if (readParameterFile(backupPath, first, generation, &needsMigration, &loadStats)) {
     activePath = backupPath;
   } else {
-    // Compatibility with existing alternating-slot files. Migration is deferred
-    // until the next successful SET; boot never writes or deletes files.
+    // Compatibility with existing alternating-slot files.
     uint32_t sequence0 = 0, sequence1 = 0;
-    const bool valid0 = readParameterFile(legacyPaths[0], first, sequence0);
-    const bool valid1 = readParameterFile(legacyPaths[1], second, sequence1);
+    bool migration0 = false, migration1 = false;
+    MigrationStats stats0{}, stats1{};
+    const bool valid0 = readParameterFile(legacyPaths[0], first, sequence0, &migration0, &stats0);
+    const bool valid1 = readParameterFile(legacyPaths[1], second, sequence1, &migration1, &stats1);
     const uint32_t difference = sequence1 - sequence0;
     if (valid1 && (!valid0 || (difference != 0 && difference < 0x80000000UL))) {
       activePath = legacyPaths[1];
       generation = sequence1;
+      needsMigration = true;
+      loadStats = stats1;
       memcpy(first, second, count * sizeof(double));
     } else if (valid0) {
       activePath = legacyPaths[0];
       generation = sequence0;
+      needsMigration = true;
+      loadStats = stats0;
     }
   }
   if (activePath) {
     for (size_t i = 0; i < count; ++i) table[i].write(first[i]);
     loadState = "LOADED";
+    if (needsMigration && !saveSnapshot(first, true)) loadState = "MIGRATION_PENDING";
   } else {
     generation = 0;
+    loadStats = {0, count, 0};
   }
   USBSerial.printf("[PARAM] %s: %s, %u parameters\n", profile, loadState,
                 static_cast<unsigned>(count));

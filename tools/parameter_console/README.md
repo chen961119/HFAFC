@@ -61,7 +61,7 @@ PARAM HELP
 读取回复示例（`\t` 表示真实制表符）：
 
 ```text
-@HFAFC\t1\tBEGIN\tF-TEAM-7-INDI-EXP\t57\tSD_READY\tLOADED
+@HFAFC\t1\tBEGIN\tF-TEAM-7-INDI-EXP\t57\tSD_READY\tLOADED\t57\t0\t0
 @HFAFC\t1\tVALUE\tKp_roll_angle\tfloat\t0.25\t0\t10\tAttitude\tRoll angle P
 @HFAFC\t1\tVALUE\tusb_throttle_debug\tint\t0\t0\t1\tDebug\tThrottle USB log: 0 off, 1 on (10 Hz)
 ...其余参数...
@@ -89,9 +89,9 @@ CRC32=xxxxxxxx
 
 保存前先读取并验证上一份有效参数，写入并验证 `params_backup.cfg`，随后覆盖 `params.cfg`，关闭后读回检查身份、版本、参数名/数量、类型、范围、CRC32 和数值。确认成功才修改运行时内存；任何阶段失败均不修改内存。首次保存时没有旧参数可备份，只创建主文件；从备份恢复后再次保存时保留原备份。
 
-开机优先加载有效的 `params.cfg`，主文件缺失或损坏时恢复 `params_backup.cfg`。两者都无效时尝试旧 `params0.cfg` / `params1.cfg`，按保存序号选择最新有效文件；下次成功修改自动迁移到新名称，旧文件不再更新。没有有效文件则使用源码默认值，开机读取本身不会写文件。
+开机优先加载有效的 `params.cfg`，主文件缺失或损坏时恢复 `params_backup.cfg`。两者都无效时尝试旧 `params0.cfg` / `params1.cfg`，按保存序号选择最新有效文件。参数表变化时，开机会自动保留旧文件并写入新格式的完整主文件；成功后状态为 `MIGRATED`，写卡失败则仍使用已恢复到内存的参数，并报告 `MIGRATION_PENDING`。没有有效文件则使用源码默认值，普通开机读取不会写文件。`BEGIN` 末尾三个数字依次是开机匹配项、默认值项、跳过的旧项。
 
-身份校验包含飞机 A～G、TEAM/SINGLE、组合规模、TESTINDI 和 expensive 配置。兼容原 V1 的 27 项浮点参数和 V2 的 28 项参数；新增参数使用源码默认值，已有值保留，下次保存为 V3。V3 使用 COUNT 声明文件中的条目数量，并按名称与类型恢复；后续增加参数时，新增项使用默认值。缺行、重复名称、未知名称、类型或配置不匹配均拒绝加载。
+身份校验包含飞机 A～G、TEAM/SINGLE、组合规模、TESTINDI 和 expensive 配置。兼容原 V1 的 27 项浮点参数和 V2 的 28 项参数。V3 使用 COUNT 声明旧文件中的条目数量，按名称与类型恢复：仍匹配且在范围内的项保留旧值，新增项或已变更类型/范围的项使用源码默认值，已删除的项跳过。参数改名等同于删除旧参数并新增参数，新参数使用源码默认值。CRC 错误、缺行、重复名称或配置不匹配仍拒绝加载整份文件。
 
 不要直接编辑参数文件而忽略 CRC；通过软件修改会自动维护主文件和备份。
 

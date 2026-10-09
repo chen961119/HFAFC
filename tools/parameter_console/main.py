@@ -355,11 +355,16 @@ class ParameterConsole:
                 }
                 self._finish_request("失败：" + messages.get(fields[0], " / ".join(fields)))
             elif self.pending["kind"] == "READ":
-                if kind == "BEGIN" and len(fields) == 4:
+                if kind == "BEGIN" and len(fields) in (4, 7):
                     count = int(fields[1])
                     if not 0 < count <= MAX_PARAMETERS:
                         raise ValueError("参数数量无效")
                     self.pending.update(count=count, profile=fields[0], storage=fields[2], source=fields[3])
+                    if len(fields) == 7:
+                        matched, defaults_used, skipped = map(int, fields[4:7])
+                        if min(matched, defaults_used, skipped) < 0 or matched + defaults_used != count:
+                            raise ValueError("参数迁移统计无效")
+                        self.pending["migration_stats"] = (matched, defaults_used, skipped)
                     self.received_parameters.clear()
                 elif kind == "VALUE" and self.pending["count"] is not None:
                     parameter = parameter_from_fields(fields)
@@ -375,9 +380,13 @@ class ParameterConsole:
                     self._render_table()
                     pending = self.pending
                     storage = "SD 就绪" if pending["storage"] == "SD_READY" else "SD 不可用"
-                    source = {"LOADED": "从 SD 加载", "SAVED": "已保存到 SD", "DEFAULTS": "源码默认值"}.get(
+                    source = {"LOADED": "从 SD 加载", "SAVED": "已保存到 SD", "DEFAULTS": "源码默认值",
+                              "MIGRATED": "已迁移到新参数表", "MIGRATION_PENDING": "已加载旧值，SD 迁移待完成"}.get(
                         pending["source"], pending["source"])
-                    self._finish_request(f"已读取 {len(self.parameters)} 项 · {pending['profile']} · {storage} · {source}")
+                    stats = pending.get("migration_stats")
+                    details = (f" · 开机匹配 {stats[0]} / 默认 {stats[1]} / 跳过旧项 {stats[2]}"
+                               if stats and (stats[1] or stats[2]) else "")
+                    self._finish_request(f"已读取 {len(self.parameters)} 项 · {pending['profile']} · {storage} · {source}{details}")
             elif kind == "OK" and len(fields) in (3, 4):
                 if len(fields) == 4:
                     name, dtype, text, saved = fields

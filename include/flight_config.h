@@ -6,8 +6,8 @@ constexpr int PWM_CENTER_US = 1500;
 constexpr int PWM_SERVO_MIN_US = 900;
 constexpr int PWM_SERVO_MAX_US = 2100;
 // 保留原有中位上下的逻辑行程，换基准后限幅为 1080～1900 μs。
-constexpr int PWM_SURFACE_MIN_US = PWM_CENTER_US - 420;
-constexpr int PWM_SURFACE_MAX_US = PWM_CENTER_US + 400;
+// constexpr int PWM_SURFACE_MIN_US = PWM_CENTER_US - 420;
+// constexpr int PWM_SURFACE_MAX_US = PWM_CENTER_US + 400;
 
 // 只启用一个机体编号；物理串联顺序为 F-D-B-A-C-E-G。
 // #define APLANE

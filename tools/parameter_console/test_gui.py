@@ -162,6 +162,16 @@ class GuiTests(unittest.TestCase):
         self.assertFalse(self.app.parameters)
         self.assertIn("不完整", self.app.status.get())
 
+    def test_migrated_snapshot_shows_recovery_counts(self):
+        self.app.pending = {"id": 6, "kind": "READ", "count": None}
+        self.app._handle_reply((6, "BEGIN", ["F", "2", "SD_READY", "MIGRATED", "1", "1", "1"]))
+        self.app._handle_reply((6, "VALUE", ["retained", "float", "0.25", "0", "10", "g", "desc"]))
+        self.app._handle_reply((6, "VALUE", ["added", "int", "2", "0", "10", "g", "desc"]))
+        self.app._handle_reply((6, "END", ["2"]))
+        self.assertEqual(len(self.app.parameters), 2)
+        self.assertIn("已迁移到新参数表", self.app.status.get())
+        self.assertIn("开机匹配 1 / 默认 1 / 跳过旧项 1", self.app.status.get())
+
     def test_complete_75_and_512_parameter_snapshots(self):
         for count in (75, 512):
             with self.subTest(count=count):

@@ -86,11 +86,11 @@ void attachActuators() {
   servo1.attach(servo1Pin, 900, 2100);// 左副翼
   servo2.attach(servo2Pin, 900, 2100);// 右副翼
   servo3.attach(servo3Pin, 900, 2100);// 升降
+  servo4.attach(servo4Pin, 900, 2100);// 油门
   servo5.attach(servo5Pin, 900, 2100);// 方向
   servo6.attach(servo6Pin, 900, 2100);
   servo7.attach(servo7Pin, 900, 2100);
-  // 电调最后接入 Servo 定时器，并立即写入锁定脉宽。
-  servo4.attach(servo4Pin, 900, 2100);// 油门
+
   commandSafeActuatorPositions();
 }
 
@@ -112,47 +112,47 @@ void convertControlCommandsToPWM() {
   Aail1_control_us = PWM_CENTER_US + 1000 * (Aail1_scaled);
   Aail2_control_us = PWM_CENTER_US + 1000 * (Aail2_scaled);
   Aele_control_us = PWM_CENTER_US + 1000 * (Aele_scaled);
-  Athro_control_us = 1000 + 1000 * (Athro_scaled);
+  Athro_control_us = PWM_CENTER_US + 1000 * (Athro_scaled);
   Arudd_control_us = PWM_CENTER_US + 1000 * (Arudd_scaled);
 
   Bail1_control_us = PWM_CENTER_US + 1000 * (Bail1_scaled);
   Bail2_control_us = PWM_CENTER_US + 1000 * (Bail2_scaled);
-  Bthro_control_us = 1000 + 1000 * (Bthro_scaled);
+  Bthro_control_us = PWM_CENTER_US + 1000 * (Bthro_scaled);
   Brudd_control_us = PWM_CENTER_US + 1000 * (Brudd_scaled);
   B_ele_control_us_manual = PWM_CENTER_US + 1000 * (Aele_scaled) +
                              0.5 * 1000 * (Bail1_scaled + Bail2_scaled) / 2;
 
   Cail1_control_us = PWM_CENTER_US + 1000 * (Cail1_scaled);
   Cail2_control_us = PWM_CENTER_US + 1000 * (Cail2_scaled);
-  Cthro_control_us = 1000 + 1000 * (Cthro_scaled);
+  Cthro_control_us = PWM_CENTER_US + 1000 * (Cthro_scaled);
   Crudd_control_us = PWM_CENTER_US + 1000 * (Crudd_scaled);
   C_ele_control_us_manual = PWM_CENTER_US + 1000 * (Aele_scaled) +
                              0.5 * 1000 * (Cail1_scaled + Cail2_scaled) / 2;
 
   Dail1_control_us = PWM_CENTER_US + 1000 * (Dail1_scaled);
   Dail2_control_us = PWM_CENTER_US + 1000 * (Dail2_scaled);
-  Dthro_control_us = 1000 + 1000 * (Dthro_scaled);
+  Dthro_control_us = PWM_CENTER_US + 1000 * (Dthro_scaled);
   Drudd_control_us = PWM_CENTER_US + 1000 * (Drudd_scaled);
   D_ele_control_us_manual = PWM_CENTER_US + 1000 * (Aele_scaled) +
                              0.5 * 1000 * (Dail1_scaled + Dail2_scaled) / 2;
 
   Eail1_control_us = PWM_CENTER_US + 1000 * (Eail1_scaled);
   Eail2_control_us = PWM_CENTER_US + 1000 * (Eail2_scaled);
-  Ethro_control_us = 1000 + 1000 * (Ethro_scaled);
+  Ethro_control_us = PWM_CENTER_US + 1000 * (Ethro_scaled);
   Erudd_control_us = PWM_CENTER_US + 1000 * (Erudd_scaled);
   E_ele_control_us_manual = PWM_CENTER_US + 1000 * (Aele_scaled) +
                              0.5 * 1000 * (Eail1_scaled + Eail2_scaled) / 2;
 
   Fail1_control_us = PWM_CENTER_US + 1000 * (Fail1_scaled);
   Fail2_control_us = PWM_CENTER_US + 1000 * (Fail2_scaled);
-  Fthro_control_us = 1000 + 1000 * (Fthro_scaled);
+  Fthro_control_us = PWM_CENTER_US + 1000 * (Fthro_scaled);
   Frudd_control_us = PWM_CENTER_US + 1000 * (Frudd_scaled);
   F_ele_control_us_manual = PWM_CENTER_US + 1000 * (Aele_scaled) +
                              0.5 * 1000 * (Fail1_scaled + Fail2_scaled) / 2;
 
   Gail1_control_us = PWM_CENTER_US + 1000 * (Gail1_scaled);
   Gail2_control_us = PWM_CENTER_US + 1000 * (Gail2_scaled);
-  Gthro_control_us = 1000 + 1000 * (Gthro_scaled);
+  Gthro_control_us = PWM_CENTER_US + 1000 * (Gthro_scaled);
   Grudd_control_us = PWM_CENTER_US + 1000 * (Grudd_scaled);
   G_ele_control_us_manual = PWM_CENTER_US + 1000 * (Aele_scaled) +
                              0.5 * 1000 * (Gail1_scaled + Gail2_scaled) / 2;
