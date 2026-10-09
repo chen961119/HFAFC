@@ -1008,7 +1008,7 @@ void getDesState() { // 调整了通道顺序
 
 #if defined APLANE // 是主机
   {
-    thro_des_RAW = (channel_3_pwm - 1000.0) / 1000.0; // 范围 0～1。
+    thro_des_RAW = (channel_3_pwm - 1100.0) / 1000.0; // 范围 0～1。
     roll_des_RAW = (channel_1_pwm - PWM_CENTER_US) / 500.0;  // 范围 -1～1。
     pitch_des_RAW = (channel_2_pwm - PWM_CENTER_US) / 500.0; // 范围 -1～1。
     yaw_des_RAW = (channel_4_pwm - PWM_CENTER_US) / 500.0;   // 范围 -1～1。
