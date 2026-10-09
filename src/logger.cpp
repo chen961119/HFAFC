@@ -90,7 +90,7 @@ void initializeLogger() {
       "Cail2_control_us,Cthro_control_us,Crudd_control_us,Dail1_control_us,Dail2_control_us,Dthro_control_us,Drudd_control_us,"
       "Eail1_control_us,Eail2_control_us,Ethro_control_us,Erudd_control_us,Fail1_control_us,Fail2_control_us,Fthro_control_us,"
       "Frudd_control_us,Gail1_control_us,Gail2_control_us,Gthro_control_us,Grudd_control_us,Pab(deg),Pac(deg),Pbd("
-      "deg),Pce(deg),Pdf(deg),Peg(deg),relativeAngle_ready(deg),Phiab_des(deg),"
+      "deg),Pce(deg),Pdf(deg),Peg(deg),Phiab_Mea(deg),Phiab_des(deg),"
       "phiac(deg),phibd(deg),phice(deg),phidf(deg),phieg(deg),Apitchsp,"
       "Bpitchsp,Cpitchsp,Dpitchsp,Epitchsp,Fpitchsp,Gpitchsp,Bpitch_raw,Cpitch_"
       "raw,Dpitch_raw,Epitch_raw,Fpitch_raw,Gpitch_raw,Bele_pwm,Cele_pwm,Dele_"
@@ -100,7 +100,8 @@ void initializeLogger() {
       "phibd_PID,phice_PID,phidf_PID,phieg_PID,roll_PID,pitch_PID,airspeed_A,"
       "Strain_value1,Strain_value2,Strain_value3,Strain_value4,Strain_value5,"
       "AOA,AOS,TAS,dp,dq,dr,INDI_q_des,INDI_q_filt,INDI_dq_des,INDI_dq_used,"
-      "INDI_delta_e_cmd_deg,INDI_delta_e_est_deg,INDI_pwm_cmd"));
+      "INDI_delta_e_cmd_deg,INDI_delta_e_est_deg,INDI_pwm_cmd,"
+      "MT6701_raw(deg),MT6701_relative(deg),MT6701_valid"));
   dataFile.flush();
   delay(10);
   USBSerial.print("新建日志文件：");
@@ -255,7 +256,9 @@ void loggerTEAM() {
       "," + String(indi_pitch_dq_used_log) + "," +
       String(indi_pitch_delta_e_cmd_deg_log) + "," +
       String(indi_pitch_delta_e_est_deg_log) + "," +
-      String(indi_pitch_pwm_cmd_log);
+      String(indi_pitch_pwm_cmd_log) + "," +
+      String(relativeAngle_raw) + "," + String(relativeAngle_ready) + "," +
+      String(rotateSensorValid() ? 1 : 0);
   dataFile.println(dataString);
 
   // 文件可用时写入本次记录。

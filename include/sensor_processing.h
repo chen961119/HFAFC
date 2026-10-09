@@ -66,7 +66,7 @@ void writeRegSPI(int cs, uint8_t reg, uint8_t val);
 extern float AccX_9250, AccY_9250, AccZ_9250;
 extern float GyroX_9250, GyroY_9250, GyroZ_9250;
 extern float MagX_9250, MagY_9250, MagZ_9250;
-extern float relativeAngle_ready;
+extern float relativeAngle_raw, relativeAngle_ready;
 extern float airspeed_A;
 extern float dp, dq, dr;
 
