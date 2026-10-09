@@ -160,13 +160,13 @@ void convertControlCommandsToPWM() {
   s6_command_PWM = s6_command_scaled * 180;
   s7_command_PWM = s7_command_scaled * 180;
   // 保留原有逻辑控制量行程限制。
-  Aail1_control_us = constrain(Aail1_control_us, PWM_SURFACE_MIN_US, PWM_SURFACE_MAX_US);
-  Aail2_control_us = constrain(Aail2_control_us, PWM_SURFACE_MIN_US, PWM_SURFACE_MAX_US);
-  Aele_control_us = constrain(Aele_control_us, PWM_SURFACE_MIN_US, PWM_SURFACE_MAX_US); // 贵的飞机限幅
-  Athro_control_us = constrain(Athro_control_us, 1000, 2000);
-  Arudd_control_us = constrain(Arudd_control_us, PWM_SURFACE_MIN_US, PWM_SURFACE_MAX_US);
-  s6_command_PWM = constrain(s6_command_PWM, 0, 180);
-  s7_command_PWM = constrain(s7_command_PWM, 0, 180);
+  // Aail1_control_us = constrain(Aail1_control_us, PWM_SURFACE_MIN_US, PWM_SURFACE_MAX_US);
+  // Aail2_control_us = constrain(Aail2_control_us, PWM_SURFACE_MIN_US, PWM_SURFACE_MAX_US);
+  // Aele_control_us = constrain(Aele_control_us, PWM_SURFACE_MIN_US, PWM_SURFACE_MAX_US); // 贵的飞机限幅
+  // Athro_control_us = constrain(Athro_control_us, 1000, 2000);
+  // Arudd_control_us = constrain(Arudd_control_us, PWM_SURFACE_MIN_US, PWM_SURFACE_MAX_US);
+  // s6_command_PWM = constrain(s6_command_PWM, 0, 180);
+  // s7_command_PWM = constrain(s7_command_PWM, 0, 180);
 }
 
 // 准备最终物理 PWM 与子机命令；apply 阶段只应用本函数的结果。
