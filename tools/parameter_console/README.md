@@ -21,7 +21,7 @@ SD 文件不存在、损坏、身份/配置不匹配时使用源码默认值，�
 
 ## 可调参数
 
-共 75 项：69 项 float32 参数和 6 项 int32 参数，服务容量上限为 512 项，在 `src/control_modes.cpp::controlParameterTable()` 中注册；控制变量保持模块私有。类型由固件的变量类型决定，软件显示 `float` 或 `int`，整数拒绝小数、指数形式及 int32 溢出。
+共 57 项：51 项 float32 参数和 6 项 int32 参数，服务容量上限为 512 项，在 `src/control_modes.cpp::controlParameterTable()` 中注册；控制变量保持模块私有。类型由固件的变量类型决定，软件显示 `float` 或 `int`，整数拒绝小数、指数形式及 int32 溢出。
 
 | 分组 | 参数 |
 | --- | --- |
@@ -33,12 +33,12 @@ SD 文件不存在、损坏、身份/配置不匹配时使用源码默认值，�
 | 控制限幅/滤波 | `k_Clp`、`i_limit`、`maxRoll`、`maxPitch`、`maxYaw`、`Trim_pitch_angle`、`roll_pid_lpf_fc`、`roll_pid_dot_lpf_fc`、`pitch_des_local_rate_lpf_fc` |
 | INDI 舵机模型/输出 | `indi_pitch_pwm_to_deg_k`、`indi_pitch_pwm_to_deg_b`、`indi_pitch_servo_delay_s`、`indi_pitch_servo_tau_s`、`indi_pitch_deflection_min_deg`、`indi_pitch_deflection_max_deg`、`indi_pitch_rate_limit_deg_s`、`indi_pitch_cmd_lpf_fc_hz`、`indi_pitch_pwm_min`、`indi_pitch_pwm_max` |
 | 执行器方向（int） | `pwm_channel1_rev` ～ `pwm_channel5_rev`，仅接受 -1 或 +1，拒绝 0 |
-| 执行器安装偏置（float） | A 机 `pwm_channel1_trim`、`pwm_channel2_trim`、`pwm_channel3A_trim`；B～G 各机 `pwm_channel1B_trim` ～ `pwm_channel3G_trim`；`pwm_channel4_trim`、`pwm_channel5_trim` |
+| 执行器安装偏置（float） | 本机 `pwm_channel1_trim` ～ `pwm_channel5_trim`，默认均为 0 μs |
 
-trim 仍表示相对 1500 μs 基准的安装偏置，不随 rev 反向；油门沿用原 1100 μs 起点。当前飞机的 `pwm_channel3_trim` 引用对应 A～G 的升降舵 trim，因此修改对应参数会直接影响本机俯仰计算。从机的襟副翼、油门、方向舵指令由主机计算，相关 trim 应在主机上调整；参数文件仍按飞机身份隔离，软件不会把一台飞控的修改同步给其他飞控。INDI 舵机纯延迟由现有 64 点队列实现，实际延迟最多 63 个采样间隔。
+trim 表示相对 1500 μs 基准的本机安装偏置，不随 rev 反向；油门沿用 1100 μs 起点。每架飞机在自己的 USB 参数表中调整五路 trim，写入自己的 SD 卡，并在开机恢复；主机下发控制偏移，由各机本地应用 rev/trim。旧版参数文件含有已移除的安装偏置项，不能直接加载；更新后请重新设置本机参数并保存。INDI 舵机纯延迟由现有 64 点队列实现，实际延迟最多 63 个采样间隔。
 
 
-旧固件持续打印 `0` 来自 `actuator_output.cpp` 每个控制周期调用 `printLocalThrottle()`，打印尚未收到 Serial6 上级有效指令时默认为 0 的 `Local_thro_PWM`。新版本默认关闭，开启后带 `parent_received` 和 `raw_pwm` 标签。开关实际绑定 int32，可保存到 SD、上电恢复并参与 `if` 判断。需要增加其他整数参数时，将已有 int32 变量的地址注册到表中：
+旧固件持续打印 `0` 来自 `actuator_output.cpp` 每个控制周期调用 `printLocalThrottle()`，打印尚未收到 Serial6 上级有效指令时默认为 0 的油门接收值。新版本默认关闭，开启后带 `parent_received` 和 `control_us` 标签；现在接收值 `Local_thro_control_us` 表示未加中位/rev/trim 的控制偏移，启动默认 -400，对应逻辑低油门 1100 μs。开关实际绑定 int32，可保存到 SD、上电恢复并参与 `if` 判断。需要增加其他整数参数时，将已有 int32 变量的地址注册到表中：
 
 ```cpp
 {"my_flag", &my_flag, 0, 1, "Configuration", "0 off, 1 on"},
@@ -61,11 +61,11 @@ PARAM HELP
 读取回复示例（`\t` 表示真实制表符）：
 
 ```text
-@HFAFC\t1\tBEGIN\tF-TEAM-7-INDI-EXP\t75\tSD_READY\tLOADED
+@HFAFC\t1\tBEGIN\tF-TEAM-7-INDI-EXP\t57\tSD_READY\tLOADED
 @HFAFC\t1\tVALUE\tKp_roll_angle\tfloat\t0.25\t0\t10\tAttitude\tRoll angle P
 @HFAFC\t1\tVALUE\tusb_throttle_debug\tint\t0\t0\t1\tDebug\tThrottle USB log: 0 off, 1 on (10 Hz)
 ...其余参数...
-@HFAFC\t1\tEND\t75
+@HFAFC\t1\tEND\t57
 ```
 
 写入成功：`@HFAFC\t2\tOK\tKp_roll_angle\tfloat\t0.3\tSAVED`。
@@ -80,7 +80,7 @@ SD 根目录使用 `params.cfg`（当前主文件）和 `params_backup.cfg`（�
 ```text
 HFAFC_PARAMS_V3 F-TEAM-7-INDI-EXP
 GEN=1
-COUNT=75
+COUNT=57
 Kp_roll_angle:float=0.25
 usb_throttle_debug:int=0
 ...完整参数集...
@@ -99,11 +99,11 @@ CRC32=xxxxxxxx
 
 固件最多注册 512 项参数，文件缓冲区为 98,304 B（96 KiB），参数名最长 96 字节。普通十进制的极小 float32 最多需要约 56 字节，因此单值缓冲区为 64 B，命令/回复缓冲区为 512 B。五个 512 项 double 数组共 20,480 B；文件条目去重标记为 512 B。大缓冲全部为模块静态内存，总计 119,296 B（116.5 KiB），不在函数栈上分配。文件读写复用同一个缓冲区，写完并关闭文件后再读回校验；保存候选、旧值和校验值使用独立数组。服务由主循环串行调用，不可在中断中重入。
 
-当前 Teensy 4.1 配置编译结果：RAM1 变量 152,064 B，代码 144,136 B，填充 19,704 B，剩余 208,384 B（203.5 KiB）供局部变量和栈使用；RAM2 变量 12,416 B，堆剩余 511,872 B。该结果已包括为 512 项预留的静态容量，注册表当前为 75 项。
+当前 Teensy 4.1 配置编译结果：RAM1 变量 150,336 B，代码 143,944 B，填充 19,896 B，剩余 210,112 B（约 205.2 KiB）供局部变量和栈使用；RAM2 变量 12,416 B，堆剩余 511,872 B。该结果已包括为 512 项预留的静态容量，注册表当前为 57 项。
 
 使用实际 ARM 编译命令附加 `-fstack-usage` 检查：参数文件读取栈帧 336 B、保存 160 B、服务轮询 280 B、初始化 56 B；最大单函数帧为 336 B。按模块调用链叠加约 848 B，不包括 C 库格式化、SD 库内部及中断的栈，尚未做板上栈高水位测量。
 
-正常控制计算直接使用变量，不遍历参数表。USB 读取每轮最多接收 64 字节或发送一行；512 项完整返回在 500 Hz 下理论约 2.1 秒，实际取决于 USB 背压和其他输出。SET 的全表序列化、CRC、SD 主文件/备份写入与读回校验仍同步执行，会延长收到该命令的控制周期。本次 75 项板上读取约 0.34～0.63 秒，写入确认约 1.09～1.44 秒，独立控制周期耗时尚未测量，见 [板上测试记录](BOARD_TEST_REPORT.md)。
+正常控制计算直接使用变量，不遍历参数表。USB 读取每轮最多接收 64 字节或发送一行；512 项完整返回在 500 Hz 下理论约 2.1 秒，实际取决于 USB 背压和其他输出。SET 的全表序列化、CRC、SD 主文件/备份写入与读回校验仍同步执行，会延长收到该命令的控制周期。此前 75 项版本的板上读取约 0.34～0.63 秒，写入确认约 1.09～1.44 秒，当前 57 项版本尚未进行板上计时，见 [板上测试记录](BOARD_TEST_REPORT.md)。
 
 ## 代码来源与适配
 
@@ -131,4 +131,4 @@ $env:ZIG_GLOBAL_CACHE_DIR = Join-Path (Get-Location) '.pio/zig-cache'
 & ./.pio/parameter_service_tests.exe
 ```
 
-主机测试覆盖协议分片、混合日志、USB 输出背压、输入范围和 NaN/Inf、SD 失败时内存保持、损坏文件回退、完整加载、配置身份、序号回绕、普通十进制 float32 往返与极值、int32 极值、V1/V2 文件迁移、512 项大文件读写、注册表扩容及 rev 零值拒绝。电脑端 12 项测试还覆盖完整读取 75/512 项参数、容量越界拒绝、排序、数字显示、十六进制切换、单元格选中/回车保存/Esc 取消及小窗口控件可见性。GUI 自动测试使用本机 socket 模拟飞控；真实 COM4 的参数读取、写入、SD 保存、完整断电上电恢复及原值恢复已验证，范围与已发现问题见 [板上测试记录](BOARD_TEST_REPORT.md)。
+主机测试覆盖协议分片、混合日志、USB 输出背压、输入范围和 NaN/Inf、SD 失败时内存保持、损坏文件回退、完整加载、配置身份、序号回绕、普通十进制 float32 往返与极值、int32 极值、V1/V2 文件迁移、512 项大文件读写、注册表扩容及 rev 零值拒绝。此前电脑端 12 项测试还覆盖完整读取 75/512 项参数、容量越界拒绝、排序、数字显示、十六进制切换、单元格选中/回车保存/Esc 取消及小窗口控件可见性。GUI 自动测试使用本机 socket 模拟飞控；此前真实 COM4 的参数读取、写入、SD 保存、完整断电上电恢复及原值恢复已验证，范围与已发现问题见 [板上测试记录](BOARD_TEST_REPORT.md)。

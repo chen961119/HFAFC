@@ -40,29 +40,17 @@
 
 ## USB 参数配置软件
 
-电脑端软件位于 `tools/parameter_console/`，提供 75 项参数读取/就地修改（最多支持 512 项）、SD 自动保存、列排序及支持十六进制显示的串口助手。参数类型显示为 `float` / `int`；双击当前值编辑，Enter 保存，Esc 取消。双击 `tools/parameter_console/dist/HFAFCParameterConsole.exe` 可启动；源码启动、协议、SD 恢复见 [参数软件使用说明](tools/parameter_console/README.md)。飞控开机在 SD 初始化后自动加载参数，修改成功后下次控制周期使用新值。
+电脑端软件位于 `tools/parameter_console/`，提供 57 项参数读取/就地修改（最多支持 512 项）、SD 自动保存、列排序及支持十六进制显示的串口助手。参数类型显示为 `float` / `int`；双击当前值编辑，Enter 保存，Esc 取消。双击 `tools/parameter_console/dist/HFAFCParameterConsole.exe` 可启动；源码启动、协议、SD 恢复见 [参数软件使用说明](tools/parameter_console/README.md)。飞控开机在 SD 初始化后自动加载参数，修改成功后下次控制周期使用新值。
 
 ## PWM 中位与安装微调
 
 `include/flight_config.h` 中统一定义 `PWM_CENTER_US = 1500`。遥控滚转、俯仰、偏航归一化以及通道 7 构型系数也以 1500 为零点；同一个遥控 PWM 数值产生的期望量会随中位修改而变化。
 
-舵面安装 trim 从旧值增加 20 μs，保持 `1500 + 新 trim` 等于原来的机械中位。当前常量如下（单位 μs）：
-
-| 机体 | 左副翼 trim | 右副翼 trim | 升降舵 trim |
-| --- | ---: | ---: | ---: |
-| A | 180 | -155 | 40 |
-| B | 205 | -20 | 62 |
-| C | 150 | -152 | -30 |
-| D | 122 | -163 | 170 |
-| E | 140 | -170 | -30 |
-| F | 154 | -187 | 29 |
-| G | 190 | -170 | 200 |
-
-方向舵 trim 为 20；油门起点仍为 1100，trim 保持 0。TESTBED 的副翼和升降舵 trim 同样增加 20。
+安装 trim 仅保留本机 `pwm_channel1_trim`～`pwm_channel5_trim`，编译默认值全部为 0 μs。各飞机通过 USB 参数表校准，在自己的 SD 卡中保存并于开机恢复；不再按机体宏选择 trim。机械中位为 `1500 + trim`，trim 不随 rev 反向。油门逻辑起点仍为 1100 μs。
 
 `convertControlCommandsToPWM()` 的 A 机舵面逻辑限幅同步移至 1080～1900，以保留原来的相对行程；油门、Servo 硬件脉宽范围及 INDI 的物理 PWM 限幅保持原值。INDI 的绝对 PWM 到舵角标定继续使用原拟合系数，其中立初始化使用 `PWM_CENTER_US + pwm_channel3_trim`。
 
-从机升降舵到副翼的补偿从本地俯仰 PWM 中扣除本机机械中位，并还原为控制方向，再按各副翼 rev 转成物理偏移。机械 trim 不参与控制补偿，零控制量时补偿为零。去除 trim 后的日志 PWM 以 1500 为基准。
+所有飞机的升降舵到副翼补偿统一使用本地俯仰控制偏移除以 15；INDI 使用实测物理 PWM，因此需扣除本机机械中位并还原控制方向。机械 trim 不参与控制补偿，零控制量时补偿为零。日志中本机舵面 PWM 扣除本机 trim 后以 1500 为基准，B～G 控制指令列以零偏移为基准；子机回传的升降舵 PWM 保留物理值。
 
 迁移对比使用旧版 `scaleCommands()`、当前 `convertControlCommandsToPWM()` 和执行器实现，检查 A 主机与 F 从机分支各 42 组相同归一化指令，包括中立、刹车、控制模式和饱和情况：中立指令一致，测试中的 PWM 指令最大差异为 1 μs，来自中位变化后的整数截断。
 
@@ -79,9 +67,13 @@ applyAndTransmitActuatorCommands();
 
 `control_modes.cpp` 输出归一化的 `*_scaled` 和未反向的升降舵前馈偏移。`convertControlCommandsToPWM()` 位于 `actuator_output.cpp`，更新私有的 `*_control_us`：它们以 1500 为逻辑零点，尚未加机械 trim 或应用反向，不能当作最终 PWM。
 
-`prepareActuatorCommands()` 按 `1500 + 安装trim + rev × 控制偏移` 生成最终的 `*_PWM`。A 主机准备本机输出和 B～G 子机缓存；从机使用已反向、已加 trim 的接收 PWM，只对新增本地补偿和阻尼应用 rev。升降舵前馈由主机反向一次，接收端直接叠加。
+`prepareActuatorCommands()` 按 `1500 + 本机安装trim + 本机rev × (控制偏移 + 本地补偿)` 生成本机最终的 `A*_PWM`。A 主机准备本机输出，发往 B～G 的旧名 `*_PWM` 缓存实际是有符号控制偏移，不含中位、rev、trim；从机叠加本地副翼补偿和阻尼后才转换成物理 PWM。手动升降舵和升降舵前馈也由接收机应用本机 rev/trim。
 
-本地升降舵计算、从机手动覆盖、前馈、副翼补偿和滚转阻尼均在 prepare 阶段完成。INDI 使用实测的物理 PWM 标定输出，不重复应用 rev/trim。`Aele_PWM` 表示最终本地升降舵输出，通信回传直接使用该值，不再重复叠加前馈。
+机间命令帧仍为 50 字节，但字段含义已改变，七架飞机须同步更新固件；旧固件不能混用。各机的 `pwm_channel1_trim`、`pwm_channel2_trim`、`pwm_channel3_trim` 保存本机安装偏置，需在对应机体上调整并保存参数。
+
+A 机在 `#if defined APLANE` 中准备本机 `Local_*_control_us` 和子机缓存，B～G 从上级命令获取本机偏移；`#endif` 后所有飞机共同计算副翼补偿与最终物理 PWM。A 机没有升降舵上级前馈，其 `Local_ele_ff_control_us` 每周期设为零。
+
+本地升降舵计算、从机手动覆盖、前馈、副翼补偿和滚转阻尼均在 prepare 阶段完成。INDI 使用实测的物理 PWM 标定输出，不重复应用 rev/trim。`ele_PWM` 表示最终本地升降舵输出，通信回传直接使用该值，不再重复叠加前馈。
 
 `applyAndTransmitActuatorCommands()` 只将准备好的五路 PWM 写入 Servo，并发送或转发机间数据。
 

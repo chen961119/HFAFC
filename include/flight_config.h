@@ -15,7 +15,6 @@ constexpr int PWM_SURFACE_MAX_US = PWM_CENTER_US + 400;
 #define FPLANE
 // #define GPLANE
 
-// #define TESTBED
 #define TESTINDI
 
 // #define THREEPLANE

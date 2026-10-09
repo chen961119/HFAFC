@@ -39,69 +39,13 @@ int32_t pwm_channel3_rev = -1;
 int32_t pwm_channel4_rev = 1;
 int32_t pwm_channel5_rev = -1;
 
-// 相比旧基准，舵面安装 trim 增加 20 μs，以保持机械中位。
-// A机
-#if defined TESTBED
-float pwm_channel1_trim = 160;
-float pwm_channel2_trim = -190;
-#else
-float pwm_channel1_trim = 180;  // 减少是向上 安装偏置
-float pwm_channel2_trim = -155; // 减少是向上
-#endif
-
-// 襟副翼微调
-float pwm_channel1B_trim = 205;  // 减少是向上
-float pwm_channel2B_trim = -20;  // 减少是向上
-float pwm_channel1C_trim = 150;  // 减少是向上
-float pwm_channel2C_trim = -152; // 减少是向上
-float pwm_channel1D_trim = 122;  // 减少是向上
-float pwm_channel2D_trim = -163; // 减少是向上
-float pwm_channel1E_trim = 140;  // 减少是向上
-float pwm_channel2E_trim = -170; // 减少是向上
-float pwm_channel1F_trim = 154;  // 减少是向上
-float pwm_channel2F_trim = -187; // 减少是向上
-float pwm_channel1G_trim = 190;  // 减少是向上
-float pwm_channel2G_trim = -170; // 减少是向上
-
-// 升降舵微调，手动模式用
-float pwm_channel3B_trim = 62;
-float pwm_channel3C_trim = -30; // 对于子机也要修正
-float pwm_channel3D_trim = 170;
-float pwm_channel3E_trim = -30;
-float pwm_channel3F_trim = 29;
-float pwm_channel3G_trim = 200;
-
-#if defined TESTBED
-float pwm_channel3A_trim = 30;
-#else
-float pwm_channel3A_trim = 40;
-#endif
-
-// 当前飞机
-
-#if defined TESTBED || defined APLANE
-float &pwm_channel3_trim =
-    pwm_channel3A_trim; // A 机升降舵安装微调，增稳模式使用。
-#elif defined BPLANE
-float &pwm_channel3_trim = pwm_channel3B_trim;
-#elif defined CPLANE
-float &pwm_channel3_trim = pwm_channel3C_trim;
-#elif defined DPLANE
-float &pwm_channel3_trim = pwm_channel3D_trim;
-#elif defined EPLANE
-float &pwm_channel3_trim = pwm_channel3E_trim;
-#elif defined FPLANE
-float &pwm_channel3_trim = pwm_channel3F_trim;
-#elif defined GPLANE
-float &pwm_channel3_trim = pwm_channel3G_trim;
-#endif
-
-// 油门以 1100 μs 为起点，输出中位相消，trim 保持原值。
+// 本机安装偏置（μs），默认零；开机从本机 SD 卡恢复。
+// trim 不随 rev 反向，各机在各自 USB 参数表中校准并保存。
+float pwm_channel1_trim = 0;
+float pwm_channel2_trim = 0;
+float pwm_channel3_trim = 0;
 float pwm_channel4_trim = 0;
-float pwm_channel5_trim = 20;
-
-static int outputpwm1, outputpwm2, outputpwm3, outputpwm4, outputpwm5;
-
+float pwm_channel5_trim = 0;
 
 // 遥控信号异常时写入各通道的安全 PWM 值（单位：μs）。
 static unsigned long channel_1_fs = 1500; // 滚转
@@ -113,11 +57,6 @@ static unsigned long channel_6_fs = 2000; // 辅助通道 1
 static unsigned long channel_7_fs = 2000; // 辅助通道 2
 static unsigned long channel_8_fs = 2000; // 辅助通道 3
 
-static float Aail1_PWM_TRIM = 0.0; // 舵面微调
-static float Aail2_PWM_TRIM = 0;   // 舵面微调
-static float Aele_PWM_TRIM = 0.0;  // 舵面微调
-static float Athro_PWM_TRIM = 0;   // 舵面微调
-static float Arudd_PWM_TRIM = 0;   // 舵面微调
 
 #if defined expensive
 static float Trim_pitch_angle = 3.0;
@@ -160,8 +99,7 @@ static float maxYaw = 160.0;  // 最大偏航角速度期望，单位 °/s。
 static float kp_rotate = 0.4;
 static float Kp_roll_angle = 0.25; // 滚转角比例增益。
 static float Ki_roll_angle = 0.0;  // 滚转角积分增益。
-static float Kd_roll_angle =
-    0.0; // 滚转角微分增益；controlANGLE2() 不使用该参数。
+static float Kd_roll_angle = 0.0; // 滚转角微分增益；controlANGLE2() 不使用该参数。
 static float B_loop_roll = 1.0; // 滚转外环阻尼系数，范围 0～1。
 static float Kp_pitch_angle = 0.12; // 俯仰角比例增益。
 static float Ki_pitch_angle = 0.0;  // 俯仰角积分增益。
@@ -376,29 +314,11 @@ const FlightParameter *controlParameterTable(size_t &count) {
       {"pwm_channel3_rev", &pwm_channel3_rev, -1, 1, "Actuator", "Output direction: -1 reverse, +1 normal; zero rejected"},
       {"pwm_channel4_rev", &pwm_channel4_rev, -1, 1, "Actuator", "Output direction: -1 reverse, +1 normal; zero rejected"},
       {"pwm_channel5_rev", &pwm_channel5_rev, -1, 1, "Actuator", "Output direction: -1 reverse, +1 normal; zero rejected"},
-      {"pwm_channel1_trim", &pwm_channel1_trim, -500, 500, "Actuator", "Local/A channel mechanical trim (us)"},
-      {"pwm_channel2_trim", &pwm_channel2_trim, -500, 500, "Actuator", "Local/A channel mechanical trim (us)"},
-      {"pwm_channel4_trim", &pwm_channel4_trim, -500, 500, "Actuator", "Local/A channel mechanical trim (us)"},
-      {"pwm_channel5_trim", &pwm_channel5_trim, -500, 500, "Actuator", "Local/A channel mechanical trim (us)"},
-      {"pwm_channel3A_trim", &pwm_channel3A_trim, -500, 500, "Actuator", "A elevator mechanical trim (us)"},
-      {"pwm_channel1B_trim", &pwm_channel1B_trim, -500, 500, "Actuator", "B channel 1 mechanical trim (us)"},
-      {"pwm_channel2B_trim", &pwm_channel2B_trim, -500, 500, "Actuator", "B channel 2 mechanical trim (us)"},
-      {"pwm_channel3B_trim", &pwm_channel3B_trim, -500, 500, "Actuator", "B channel 3 mechanical trim (us)"},
-      {"pwm_channel1C_trim", &pwm_channel1C_trim, -500, 500, "Actuator", "C channel 1 mechanical trim (us)"},
-      {"pwm_channel2C_trim", &pwm_channel2C_trim, -500, 500, "Actuator", "C channel 2 mechanical trim (us)"},
-      {"pwm_channel3C_trim", &pwm_channel3C_trim, -500, 500, "Actuator", "C channel 3 mechanical trim (us)"},
-      {"pwm_channel1D_trim", &pwm_channel1D_trim, -500, 500, "Actuator", "D channel 1 mechanical trim (us)"},
-      {"pwm_channel2D_trim", &pwm_channel2D_trim, -500, 500, "Actuator", "D channel 2 mechanical trim (us)"},
-      {"pwm_channel3D_trim", &pwm_channel3D_trim, -500, 500, "Actuator", "D channel 3 mechanical trim (us)"},
-      {"pwm_channel1E_trim", &pwm_channel1E_trim, -500, 500, "Actuator", "E channel 1 mechanical trim (us)"},
-      {"pwm_channel2E_trim", &pwm_channel2E_trim, -500, 500, "Actuator", "E channel 2 mechanical trim (us)"},
-      {"pwm_channel3E_trim", &pwm_channel3E_trim, -500, 500, "Actuator", "E channel 3 mechanical trim (us)"},
-      {"pwm_channel1F_trim", &pwm_channel1F_trim, -500, 500, "Actuator", "F channel 1 mechanical trim (us)"},
-      {"pwm_channel2F_trim", &pwm_channel2F_trim, -500, 500, "Actuator", "F channel 2 mechanical trim (us)"},
-      {"pwm_channel3F_trim", &pwm_channel3F_trim, -500, 500, "Actuator", "F channel 3 mechanical trim (us)"},
-      {"pwm_channel1G_trim", &pwm_channel1G_trim, -500, 500, "Actuator", "G channel 1 mechanical trim (us)"},
-      {"pwm_channel2G_trim", &pwm_channel2G_trim, -500, 500, "Actuator", "G channel 2 mechanical trim (us)"},
-      {"pwm_channel3G_trim", &pwm_channel3G_trim, -500, 500, "Actuator", "G channel 3 mechanical trim (us)"},
+      {"pwm_channel1_trim", &pwm_channel1_trim, -500, 500, "Actuator", "Local channel mechanical trim (us)"},
+      {"pwm_channel2_trim", &pwm_channel2_trim, -500, 500, "Actuator", "Local channel mechanical trim (us)"},
+      {"pwm_channel3_trim", &pwm_channel3_trim, -500, 500, "Actuator", "Local channel mechanical trim (us)"},
+      {"pwm_channel4_trim", &pwm_channel4_trim, -500, 500, "Actuator", "Local channel mechanical trim (us)"},
+      {"pwm_channel5_trim", &pwm_channel5_trim, -500, 500, "Actuator", "Local channel mechanical trim (us)"},
   };
   count = sizeof(parameters) / sizeof(parameters[0]);
   return parameters;

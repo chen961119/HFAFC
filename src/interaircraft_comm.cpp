@@ -11,7 +11,7 @@ extern float relativeAngle_ready, phiac, phibd, phice, phidf, phieg;
 extern float roll_IMU, pitch_IMU, GyroX_9250;
 
 struct ReceivedCommandData {
-  // 固定长度 50 字节指令帧解析后的字段；PWM 单位 μs，角度单位 °。
+  // 固定长度 50 字节指令帧解析后的字段；控制偏移单位 μs（不含中位/rev/trim），角度单位 °。
   int servo[12];
   float pitch[3];
   int ele_pwm[3];
@@ -27,14 +27,14 @@ bool hasReceivedParentCommand() { return parentCommandReceived; }
 // 向A的左发 F<-D<-B<-A
 static int servoCommandsleft[12] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 static float pitchAnglesleft[3] = {0, 0, 0};
-static int elePwmCommandsLeft[3] = {1500, 1500, 1500};
-static int eleFFPwmCommandsLeft[3] = {1500, 1500, 1500};
+static int elePwmCommandsLeft[3] = {};
+static int eleFFPwmCommandsLeft[3] = {};
 static bool lightSignalsleft[3] = {0, 0, 1};
 // 向A的右发 A->C->E->G
 static int servoCommandsright[12] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 static float pitchAnglesright[3] = {0, 0, 0};
-static int elePwmCommandsRight[3] = {1500, 1500, 1500};
-static int eleFFPwmCommandsRight[3] = {1500, 1500, 1500};
+static int elePwmCommandsRight[3] = {};
+static int eleFFPwmCommandsRight[3] = {};
 static bool lightSignalsright[3] = {0, 0, 1};
 
 // 从机往内发的。
@@ -48,8 +48,10 @@ static ReceivedCommandData recvData;
 static uint16_t bufIndex = 0;
 static bool frameStarted = false;
 float Local_pitch_des;
-int Local_ail1_PWM, Local_ail2_PWM, Local_thro_PWM, Local_rudd_PWM,
-    Local_ele_PWM, Local_ele_ff_PWM;
+// 未收到上级命令前保持 1100 μs 的逻辑低油门。
+int Local_thro_control_us = 1100 - PWM_CENTER_US;
+int Local_ail1_control_us, Local_ail2_control_us, Local_rudd_control_us,
+    Local_ele_control_us, Local_ele_ff_control_us;
 float phiB_raw, phiC_raw, phiD_raw, phiE_raw, phiF_raw, phiG_raw;
 float thetaB_raw, thetaC_raw, thetaD_raw, thetaE_raw, thetaF_raw, thetaG_raw;
 int Bele_PWM, Cele_PWM, Dele_PWM, Eele_PWM, Fele_PWM, Gele_PWM;
@@ -69,7 +71,7 @@ static void sendAllDataright(int servoCommandsright[12], float pitchAnglesright[
                              bool lightSignalsright[3], bool int_is_valid);
 
 // 把左侧指定子机的副翼、油门、方向舵、俯仰角和升降舵指令写入发送缓存。
-// index 为同侧由近到远的 0～2；调用方负责检查范围，PWM 单位为 μs。
+// index 为同侧由近到远的 0～2；调用方负责检查范围，控制偏移单位为 μs，不含中位/rev/trim。
 void setLeftChildCommand(unsigned int index, int aileron1, int aileron2,
                          int throttle, int rudder, float pitch,
                          int elevatorManual, int elevatorFeedForward) {
@@ -84,7 +86,7 @@ void setLeftChildCommand(unsigned int index, int aileron1, int aileron2,
 }
 
 // 把右侧指定子机的舵面和俯仰指令写入发送缓存。
-// index 为同侧由近到远的 0～2；调用方负责检查范围，PWM 单位为 μs。
+// index 为同侧由近到远的 0～2；调用方负责检查范围，控制偏移单位为 μs，不含中位/rev/trim。
 void setRightChildCommand(unsigned int index, int aileron1, int aileron2,
                           int throttle, int rudder, float pitch,
                           int elevatorManual, int elevatorFeedForward) {
@@ -188,7 +190,7 @@ void sendGYROxANGLE() // 从机要做的
   THETAALL[0] = pitch_IMU;                 // 自己
   THETAALL[1] = thetaD_raw;                // 听来的
   THETAALL[2] = thetaF_raw;                // 听来的
-  ELEPWM[0] = Aele_PWM; // 自己
+  ELEPWM[0] = ele_PWM; // 自己
   ELEPWM[1] = Dele_PWM;                    // 听来的
   ELEPWM[2] = Fele_PWM;                    // 听来的
 
@@ -205,7 +207,7 @@ void sendGYROxANGLE() // 从机要做的
   THETAALL[0] = pitch_IMU;                 // 自己
   THETAALL[1] = thetaE_raw;                // 听来的
   THETAALL[2] = thetaG_raw;                // 听来的
-  ELEPWM[0] = Aele_PWM; // 自己
+  ELEPWM[0] = ele_PWM; // 自己
   ELEPWM[1] = Eele_PWM;                    // 听来的
   ELEPWM[2] = Gele_PWM;                    // 听来的
 
@@ -223,7 +225,7 @@ void sendGYROxANGLE() // 从机要做的
   THETAALL[1] = pitch_IMU;                 // 自己
   THETAALL[2] = thetaF_raw;                // 自己
   ELEPWM[0] = 0;                           //
-  ELEPWM[1] = Aele_PWM; // 自己的
+  ELEPWM[1] = ele_PWM; // 自己的
   ELEPWM[2] = Fele_PWM;                    // 听来的
 #elif defined EPLANE
   RelativeAngleAll[0] = 0.0;
@@ -239,7 +241,7 @@ void sendGYROxANGLE() // 从机要做的
   THETAALL[1] = pitch_IMU;                 // 自己
   THETAALL[2] = thetaG_raw;                // 自己
   ELEPWM[0] = 0;                           //
-  ELEPWM[1] = Aele_PWM; // 自己的
+  ELEPWM[1] = ele_PWM; // 自己的
   ELEPWM[2] = Gele_PWM;                    // 听来的
 #elif defined FPLANE
   RelativeAngleAll[0] = 0.0;
@@ -256,7 +258,7 @@ void sendGYROxANGLE() // 从机要做的
   THETAALL[2] = pitch_IMU;                 // 自己
   ELEPWM[0] = 0;                           //
   ELEPWM[1] = 0;                           //
-  ELEPWM[2] = Aele_PWM; // 听来的
+  ELEPWM[2] = ele_PWM; // 听来的
 #elif defined GPLANE
   RelativeAngleAll[0] = 0.0;
   RelativeAngleAll[1] = 0.0;
@@ -272,7 +274,7 @@ void sendGYROxANGLE() // 从机要做的
   THETAALL[2] = pitch_IMU;                 // 自己
   ELEPWM[0] = 0;                           //
   ELEPWM[1] = 0;                           //
-  ELEPWM[2] = Aele_PWM; // 听来的
+  ELEPWM[2] = ele_PWM; // 听来的
 #endif
 
   float invFreq = 1.0 / Freqsendback * 1000000.0;
@@ -371,7 +373,7 @@ static void sendAllDataleft(int servoCommandsleft[12], float pitchAnglesleft[3],
     return;
   lasttransTime = checker2;
   // 固定大小缓冲区：2头字节 + 1积分控制有效bool + 1强制手动bool + 12舵机×2 +
-  // 3角度×2 + 3升降舵PWM×2 + 3升降舵前馈PWM×2 + 3灯光×1 + 1校验和 = 50字节
+  // 3角度×2 + 3手动升降舵偏移×2 + 3升降舵前馈偏移×2 + 3灯光×1 + 1校验和 = 50字节
   uint8_t buffer[50];
   uint8_t checksum = 0;
   int pos = 0;
@@ -405,14 +407,14 @@ static void sendAllDataleft(int servoCommandsleft[12], float pitchAnglesleft[3],
     checksum += buffer[pos - 2] + buffer[pos - 1];
   }
 
-  // 4. 升降舵PWM(3个)
+  // 4. 手动升降舵偏移(3个)
   for (int i = 0; i < 3; i++) {
     buffer[pos++] = elePwmLeft[i] & 0xFF;
     buffer[pos++] = (elePwmLeft[i] >> 8) & 0xFF;
     checksum += buffer[pos - 2] + buffer[pos - 1];
   }
 
-  // 5. 升降舵前馈PWM(3个)
+  // 5. 升降舵前馈偏移(3个)
   for (int i = 0; i < 3; i++) {
     buffer[pos++] = eleFFPwmLeft[i] & 0xFF;
     buffer[pos++] = (eleFFPwmLeft[i] >> 8) & 0xFF;
@@ -449,7 +451,7 @@ static void sendAllDataright(int servoCommandsright[12], float pitchAnglesright[
   lasttransTime3 = checker3;
 
   // 固定大小缓冲区：2头字节 + 1积分控制有效bool + 1强制手动bool + 12舵机×2 +
-  // 3角度×2 + 3升降舵PWM×2 + 3升降舵前馈PWM×2 + 3灯光×1 + 1校验和 = 50字节
+  // 3角度×2 + 3手动升降舵偏移×2 + 3升降舵前馈偏移×2 + 3灯光×1 + 1校验和 = 50字节
   uint8_t buffer[50];
   uint8_t checksum = 0;
   int pos = 0;
@@ -483,14 +485,14 @@ static void sendAllDataright(int servoCommandsright[12], float pitchAnglesright[
     checksum += buffer[pos - 2] + buffer[pos - 1];
   }
 
-  // 4. 升降舵PWM(3个)
+  // 4. 手动升降舵偏移(3个)
   for (int i = 0; i < 3; i++) {
     buffer[pos++] = elePwmRight[i] & 0xFF;
     buffer[pos++] = (elePwmRight[i] >> 8) & 0xFF;
     checksum += buffer[pos - 2] + buffer[pos - 1];
   }
 
-  // 5. 升降舵前馈PWM(3个)
+  // 5. 升降舵前馈偏移(3个)
   for (int i = 0; i < 3; i++) {
     buffer[pos++] = eleFFPwmRight[i] & 0xFF;
     buffer[pos++] = (eleFFPwmRight[i] >> 8) & 0xFF;
@@ -567,14 +569,14 @@ void receiveCommandData() {
           bufPos += 2;
         }
 
-        // 3. 提取升降舵PWM (3个int16_t)
+        // 3. 提取手动升降舵偏移 (3个int16_t)
         for (int i = 0; i < 3; i++) {
           recvData.ele_pwm[i] =
               (int16_t)(buffer[bufPos + 1] << 8) | buffer[bufPos];
           bufPos += 2;
         }
 
-        // 4. 提取升降舵前馈PWM (3个int16_t)
+        // 4. 提取升降舵前馈偏移 (3个int16_t)
         for (int i = 0; i < 3; i++) {
           recvData.ele_ff_pwm[i] =
               (int16_t)(buffer[bufPos + 1] << 8) | buffer[bufPos];
@@ -589,33 +591,33 @@ void receiveCommandData() {
 
 // 拿出自己的
 #if defined BPLANE || defined CPLANE
-        Local_ail1_PWM = recvData.servo[0];
-        Local_ail2_PWM = recvData.servo[1];
-        Local_thro_PWM = recvData.servo[2];
-        Local_rudd_PWM = recvData.servo[3];
+        Local_ail1_control_us = recvData.servo[0];
+        Local_ail2_control_us = recvData.servo[1];
+        Local_thro_control_us = recvData.servo[2];
+        Local_rudd_control_us = recvData.servo[3];
         Local_pitch_des = recvData.pitch[0];
-        Local_ele_PWM = recvData.ele_pwm[0];
-        Local_ele_ff_PWM = recvData.ele_ff_pwm[0];
+        Local_ele_control_us = recvData.ele_pwm[0];
+        Local_ele_ff_control_us = recvData.ele_ff_pwm[0];
         int_is_valid = recvData.int_is_valid;
         force_manual = recvData.Force_manual;
 #elif defined DPLANE || defined EPLANE
-        Local_ail1_PWM = recvData.servo[4];
-        Local_ail2_PWM = recvData.servo[5];
-        Local_thro_PWM = recvData.servo[6];
-        Local_rudd_PWM = recvData.servo[7];
+        Local_ail1_control_us = recvData.servo[4];
+        Local_ail2_control_us = recvData.servo[5];
+        Local_thro_control_us = recvData.servo[6];
+        Local_rudd_control_us = recvData.servo[7];
         Local_pitch_des = recvData.pitch[1];
-        Local_ele_PWM = recvData.ele_pwm[1];
-        Local_ele_ff_PWM = recvData.ele_ff_pwm[1];
+        Local_ele_control_us = recvData.ele_pwm[1];
+        Local_ele_ff_control_us = recvData.ele_ff_pwm[1];
         int_is_valid = recvData.int_is_valid;
         force_manual = recvData.Force_manual;
 #elif defined FPLANE || defined GPLANE
-        Local_ail1_PWM = recvData.servo[8];
-        Local_ail2_PWM = recvData.servo[9];
-        Local_thro_PWM = recvData.servo[10];
-        Local_rudd_PWM = recvData.servo[11];
+        Local_ail1_control_us = recvData.servo[8];
+        Local_ail2_control_us = recvData.servo[9];
+        Local_thro_control_us = recvData.servo[10];
+        Local_rudd_control_us = recvData.servo[11];
         Local_pitch_des = recvData.pitch[2];
-        Local_ele_PWM = recvData.ele_pwm[2];
-        Local_ele_ff_PWM = recvData.ele_ff_pwm[2];
+        Local_ele_control_us = recvData.ele_pwm[2];
+        Local_ele_ff_control_us = recvData.ele_ff_pwm[2];
         int_is_valid = recvData.int_is_valid;
         force_manual = recvData.Force_manual;
 #endif
@@ -643,7 +645,7 @@ void printReceivedData() {
   for (int i = 0; i < 3; i++)
     USBSerial.printf("%.3f ", recvData.pitch[i]);
 
-  // 升降舵PWM
+  // 手动升降舵偏移
   USBSerial.print("\nELEPWM: ");
   for (int i = 0; i < 3; i++)
     USBSerial.printf("%d ", recvData.ele_pwm[i]);

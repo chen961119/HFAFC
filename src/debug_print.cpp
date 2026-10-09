@@ -8,7 +8,7 @@
 // 所有调试打印共用一个节流时间戳；同一周期调用多个打印函数时可能只输出第一个。
 static unsigned long print_counter = 0;
 
-// 输出从机当前油门 PWM 指令，单位为 μs。
+// 输出本机当前油门控制偏移，单位为 μs。
 static int32_t throttle_debug = 0;
 int32_t &localThrottleDebugSetting() { return throttle_debug; }
 void printLocalThrottle() {
@@ -17,8 +17,8 @@ void printLocalThrottle() {
   last = micros();
   const int room = USBSerial.availableForWrite();
   if (room < 80) return;
-  USBSerial.printf("[THROTTLE] parent_received=%d raw_pwm=%d\n",
-                hasReceivedParentCommand() ? 1 : 0, Local_thro_PWM);
+  USBSerial.printf("[THROTTLE] parent_received=%d control_us=%d\n",
+                hasReceivedParentCommand() ? 1 : 0, Local_thro_control_us);
 }
 
 // 按共享时间戳节流输出遥控各通道 PWM。
@@ -148,15 +148,15 @@ void printServoCommands() {
   if (current_time - print_counter > 10000) {
     print_counter = micros();
     USBSerial.print(F("Aail1:"));
-    USBSerial.print(Aail1_PWM);
+    USBSerial.print(ail1_PWM);
     USBSerial.print(F(" Aail2:"));
-    USBSerial.print(Aail2_PWM);
+    USBSerial.print(ail2_PWM);
     USBSerial.print(F(" Aele:"));
-    USBSerial.print(Aele_PWM);
+    USBSerial.print(ele_PWM);
     USBSerial.print(F(" Athro:"));
-    USBSerial.print(Athro_PWM);
+    USBSerial.print(thro_PWM);
     USBSerial.print(F(" Arudd:"));
-    USBSerial.print(Arudd_PWM);
+    USBSerial.print(rudd_PWM);
     USBSerial.print(F(" s6_command:"));
     USBSerial.print(s6_command_PWM);
     USBSerial.print(F(" s7_command:"));

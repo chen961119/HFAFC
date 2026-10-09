@@ -85,11 +85,11 @@ void initializeLogger() {
   dataFile.println(String(
       "TimeStamp(us),ROLL_IMU(deg),ROLL_Eq(deg),PITCH_IMU(deg),YAW_IMU(deg),"
       "ROLL_des(deg),PITCH_des_local(deg),YAW_des(deg),CH1_PWM,CH2_PWM,CH3_PWM,"
-      "CH4_PWM,CH5_PWM,CH6_PWM,CH7_PWM,CH8_PWM,Aail1_PWM,Aail2_PWM,Aele_PWM,"
-      "Athro_PWM,Arudd_PWM,Bail1_PWM,Bail2_PWM,Bthro_PWM,Brudd_PWM,Cail1_PWM,"
-      "Cail2_PWM,Cthro_PWM,Crudd_PWM,Dail1_PWM,Dail2_PWM,Dthro_PWM,Drudd_PWM,"
-      "Eail1_PWM,Eail2_PWM,Ethro_PWM,Erudd_PWM,Fail1_PWM,Fail2_PWM,Fthro_PWM,"
-      "Frudd_PWM,Gail1_PWM,Gail2_PWM,Gthro_PWM,Grudd_PWM,Pab(deg),Pac(deg),Pbd("
+      "CH4_PWM,CH5_PWM,CH6_PWM,CH7_PWM,CH8_PWM,ail1_PWM,ail2_PWM,ele_PWM,"
+      "thro_PWM,rudd_PWM,Bail1_control_us,Bail2_control_us,Bthro_control_us,Brudd_control_us,Cail1_control_us,"
+      "Cail2_control_us,Cthro_control_us,Crudd_control_us,Dail1_control_us,Dail2_control_us,Dthro_control_us,Drudd_control_us,"
+      "Eail1_control_us,Eail2_control_us,Ethro_control_us,Erudd_control_us,Fail1_control_us,Fail2_control_us,Fthro_control_us,"
+      "Frudd_control_us,Gail1_control_us,Gail2_control_us,Gthro_control_us,Grudd_control_us,Pab(deg),Pac(deg),Pbd("
       "deg),Pce(deg),Pdf(deg),Peg(deg),relativeAngle_ready(deg),Phiab_des(deg),"
       "phiac(deg),phibd(deg),phice(deg),phidf(deg),phieg(deg),Apitchsp,"
       "Bpitchsp,Cpitchsp,Dpitchsp,Epitchsp,Fpitchsp,Gpitchsp,Bpitch_raw,Cpitch_"
@@ -130,10 +130,10 @@ void loggerSINGLE() {
       String(pitch_des_local) + "," + String(yaw_des) + "," +
       String(channel_1_pwm) + "," + String(channel_2_pwm) + "," +
       String(channel_3_pwm) + "," + String(channel_4_pwm) + "," +
-      String(channel_5_pwm) + "," + String(Aail1_PWM - pwm_channel1_trim) +
-      "," + String(Aail2_PWM - pwm_channel2_trim) + "," +
-      String(Aele_PWM - pwm_channel3_trim) + "," + String(Athro_PWM) + "," +
-      String(Arudd_PWM) + "," + String(-GyroX_6050) + "," + String(GyroY_9250) +
+      String(channel_5_pwm) + "," + String(ail1_PWM - pwm_channel1_trim) +
+      "," + String(ail2_PWM - pwm_channel2_trim) + "," +
+      String(ele_PWM - pwm_channel3_trim) + "," + String(thro_PWM) + "," +
+      String(rudd_PWM) + "," + String(-GyroX_6050) + "," + String(GyroY_9250) +
       "," + String(GyroZ_9250) + "," + String(Pab) + "," +
       String(relativeAngle_ready) + "," + String(Phiab_des) + "," +
       String(-AccX_9250) + "," + String(AccY_9250) + "," + String(AccZ_9250);
@@ -208,10 +208,10 @@ void loggerTEAM() {
       String(channel_3_pwm) + "," + String(channel_4_pwm) + "," +
       String(channel_5_pwm) + "," + String(channel_6_pwm) + "," +
       String(channel_7_pwm) + "," + String(channel_8_pwm) + "," +
-      String(Aail1_PWM - pwm_channel1_trim) + "," +
-      String(Aail2_PWM - pwm_channel2_trim) + "," +
-      String(Aele_PWM - pwm_channel3_trim) + "," + String(Athro_PWM) + "," +
-      String(Arudd_PWM) + "," + String(Bail1_PWM) + "," + String(Bail2_PWM) +
+      String(ail1_PWM - pwm_channel1_trim) + "," +
+      String(ail2_PWM - pwm_channel2_trim) + "," +
+      String(ele_PWM - pwm_channel3_trim) + "," + String(thro_PWM) + "," +
+      String(rudd_PWM) + "," + String(Bail1_PWM) + "," + String(Bail2_PWM) +
       "," + String(Bthro_PWM) + "," + String(Brudd_PWM) + "," +
       String(Cail1_PWM) + "," + String(Cail2_PWM) + "," + String(Cthro_PWM) +
       "," + String(Crudd_PWM) + "," + String(Dail1_PWM) + "," +
@@ -231,12 +231,12 @@ void loggerTEAM() {
       String(F_pitch_sp) + "," + String(G_pitch_sp) + "," + String(thetaB_raw) +
       "," + String(thetaC_raw) + "," + String(thetaD_raw) + "," +
       String(thetaE_raw) + "," + String(thetaF_raw) + "," + String(thetaG_raw) +
-      "," + String(Bele_PWM - pwm_channel3B_trim) + "," +
-      String(Cele_PWM - pwm_channel3C_trim) + "," +
-      String(Dele_PWM - pwm_channel3D_trim) + "," +
-      String(Eele_PWM - pwm_channel3E_trim) + "," +
-      String(Fele_PWM - pwm_channel3F_trim) + "," +
-      String(Gele_PWM - pwm_channel3G_trim) + "," + String(rollAB_rad_Qua) +
+      "," + String(Bele_PWM) + "," +
+      String(Cele_PWM) + "," +
+      String(Dele_PWM) + "," +
+      String(Eele_PWM) + "," +
+      String(Fele_PWM) + "," +
+      String(Gele_PWM) + "," + String(rollAB_rad_Qua) +
       "," + String(roll_IMU_EXT) + "," + String(pitch_IMU_EXT) + "," +
       String(yaw_IMU_EXT) + "," + String(-AccX_6050) + "," + String(AccY_6050) +
       "," + String(AccZ_6050) + "," + String(-GyroX_6050) + "," +

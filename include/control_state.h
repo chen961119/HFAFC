@@ -11,12 +11,6 @@ extern int channel_5_pwm, channel_6_pwm, channel_7_pwm, channel_8_pwm;
 // 各通道方向系数与各机安装偏置。
 extern int32_t pwm_channel1_rev, pwm_channel2_rev, pwm_channel3_rev,
     pwm_channel4_rev, pwm_channel5_rev;
-extern float pwm_channel1B_trim, pwm_channel2B_trim;
-extern float pwm_channel1C_trim, pwm_channel2C_trim;
-extern float pwm_channel1D_trim, pwm_channel2D_trim;
-extern float pwm_channel1E_trim, pwm_channel2E_trim;
-extern float pwm_channel1F_trim, pwm_channel2F_trim;
-extern float pwm_channel1G_trim, pwm_channel2G_trim;
 extern float pwm_channel4_trim, pwm_channel5_trim;
 extern float ailBrake_PWM;
 extern float D_ele_command_PWM_FF, E_ele_command_PWM_FF;
@@ -26,14 +20,7 @@ extern bool int_is_valid;
 extern bool force_manual;
 extern float pwm_channel1_trim;
 extern float pwm_channel2_trim;
-extern float pwm_channel3B_trim;
-extern float pwm_channel3C_trim;
-extern float pwm_channel3D_trim;
-extern float pwm_channel3E_trim;
-extern float pwm_channel3F_trim;
-extern float pwm_channel3G_trim;
-extern float &pwm_channel3_trim;
-extern float pwm_channel3A_trim;
+extern float pwm_channel3_trim;
 // controlMixer() 输出的归一化控制量，供 actuator_output 缩放。
 extern float Aail1_scaled, Aail2_scaled, Aele_scaled, Athro_scaled, Arudd_scaled;
 extern float Bail1_scaled, Bail2_scaled, Bthro_scaled, Brudd_scaled;
@@ -46,13 +33,14 @@ extern float s6_command_scaled, s7_command_scaled;
 // 未反向的升降舵前馈控制偏移（μs），不含机械中位。
 extern float B_ele_control_ff_us, C_ele_control_ff_us, D_ele_control_ff_us, E_ele_control_ff_us, F_ele_control_ff_us, G_ele_control_ff_us;
 
-// 以下 *_PWM 是 prepare 阶段生成的最终物理输出。
-extern float Aail1_PWM;
-extern float Aail2_PWM;
-extern float Aele_PWM;
-extern float Athro_PWM;
-extern float Arudd_PWM;
+// A* 是 prepare 阶段生成的本机最终物理 PWM（所有机型通用）。
+extern float ail1_PWM;
+extern float ail2_PWM;
+extern float ele_PWM;
+extern float thro_PWM;
+extern float rudd_PWM;
 extern float A_pitch_sp;
+// B～G 的 *_PWM 是发送给子机的控制偏移（μs），不含中位、rev 或 trim。
 extern float Bail1_PWM;
 extern float Bail2_PWM;
 extern float B_pitch_sp;
