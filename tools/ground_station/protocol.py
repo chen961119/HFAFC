@@ -15,6 +15,9 @@ class Parameter:
     group: str
     description: str
     dtype: str = "float"
+    storage: str = "SD"
+    effect: str = "IMMEDIATE"
+    read_only: bool = False
 
 
 def format_value(value, dtype="float"):
@@ -83,6 +86,13 @@ def parse_reply(line: bytes):
 
 def parameter_from_fields(fields):
     dtype = "float"
+    storage, effect, access = "SD", "IMMEDIATE", "EDITABLE"
+    if len(fields) == 10:
+        fields, (storage, effect, access) = fields[:7], fields[7:]
+        if not re.fullmatch(r"[A-Za-z0-9_]{1,128}", fields[0]):
+            raise ValueError("参数名须为 1～128 个 ASCII 字母、数字或下划线")
+        if storage not in ("SD", "EEPROM") or effect not in ("IMMEDIATE", "REBOOT") or access not in ("EDITABLE", "READ_ONLY"):
+            raise ValueError("参数存储或生效信息错误")
     if len(fields) == 7:
         name, dtype, *remaining = fields
         fields = [name, *remaining]
@@ -95,12 +105,16 @@ def parameter_from_fields(fields):
         raise ValueError("参数响应包含无效数值")
     if not numbers[1] <= numbers[0] <= numbers[2]:
         raise ValueError("参数值超出返回的范围")
-    return Parameter(name, *numbers, group, description, dtype)
+    return Parameter(name, *numbers, group, description, dtype, storage, effect, access == "READ_ONLY")
 
 
 def validate_edit(parameter: Parameter, text: str) -> float:
+    if parameter.read_only:
+        raise ValueError("此参数由固件管理，只能读取")
     if parameter.dtype == "int":
         value = parse_integer(text)
+        if parameter.name == "aircraft_count" and value not in (1, 3, 4, 5, 7):
+            raise ValueError("飞机数量只支持 1（单机）、3、4、5、7")
         if parameter.name.endswith("_rev") and value not in (-1, 1):
             raise ValueError("反向系数只能为 -1 或 1")
         if not parameter.minimum <= value <= parameter.maximum:

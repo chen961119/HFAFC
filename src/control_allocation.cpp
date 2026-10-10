@@ -2,6 +2,7 @@
 #include "control_allocation.h"
 #include "control_state.h"
 #include "sensor_processing.h"
+#include "interaircraft_comm.h"
 
 using namespace Eigen;
 
@@ -101,10 +102,10 @@ void initializeInertiaMatrices(Matrix3f& Ia, Matrix3f& Ib, Matrix3f& Ic, Matrix3
 // 初始化旋转矩阵（严格对应MATLAB）
 // 按当前相对转角生成机体之间绕 x 轴的旋转矩阵；共享角度输入为度。
 void initializeRotationMatrices(Matrix3f& Eab, Matrix3f& Eac, Matrix3f& Ebd, Matrix3f& Ece) {
-    float phiabrad=relativeAngle_ready*0.01745;
-    float phiacrad=phiac*0.01745;
-    float phibdrad=phibd*0.01745;
-    float phicerad=phice*0.01745;
+    float phiabrad=(phiB_raw - roll_IMU)*0.01745;
+    float phiacrad=(phiC_raw - roll_IMU)*0.01745;
+    float phibdrad=(phiD_raw - phiB_raw)*0.01745;
+    float phicerad=(phiE_raw - phiC_raw)*0.01745;
     Eab << 1, 0, 0,
            0, cos(phiabrad), sin(phiabrad),
            0, -sin(phiabrad), cos(phiabrad);
@@ -433,7 +434,7 @@ void getpinvBplusmini() {
 
     MatrixXf M = assembleMassMatrix();
 
-    MatrixXf Be = computeBeMatrix(y, relativeAngle_ready*0.01745, phiac*0.01745, phibd*0.01745, phice*0.01745);
+    MatrixXf Be = computeBeMatrix(y, (phiB_raw - roll_IMU)*0.01745, (phiC_raw - roll_IMU)*0.01745, (phiD_raw - phiB_raw)*0.01745, (phiE_raw - phiC_raw)*0.01745);
     extractMpi(); //得到Mpi
     MatrixXf Mpi_pinv = Mpi.inverse();  // 实际计算
     getQx();

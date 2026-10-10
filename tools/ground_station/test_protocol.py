@@ -4,6 +4,28 @@ import struct
 
 
 class ProtocolTests(unittest.TestCase):
+    def test_single_aircraft_count_edit(self):
+        p = Parameter("aircraft_count", 3, 1, 7, "Aircraft", "Count", "int", "EEPROM", "REBOOT")
+        for count in (1, 3, 4, 5, 7):
+            self.assertEqual(validate_edit(p, str(count)), count)
+        for count in (0, 2, 6, 8):
+            with self.assertRaises(ValueError):
+                validate_edit(p, str(count))
+
+    def test_storage_effect_and_read_only_metadata(self):
+        for name in ("a" * 129, "bad name", "中文", ""):
+            with self.assertRaises(ValueError):
+                parameter_from_fields([name, "int", "0", "0", "1", "A", "A", "EEPROM", "IMMEDIATE", "EDITABLE"])
+        self.assertEqual(parameter_from_fields(["a" * 128, "int", "0", "0", "1", "A", "A", "EEPROM", "IMMEDIATE", "EDITABLE"]).name, "a" * 128)
+        p = parameter_from_fields(["aircraft_id", "int", "0", "0", "7", "Aircraft", "Identity", "EEPROM", "REBOOT", "EDITABLE"])
+        self.assertEqual((p.storage, p.effect, p.read_only), ("EEPROM", "REBOOT", False))
+        p = parameter_from_fields(["valid", "int", "0", "0", "1", "IMU", "Valid", "EEPROM", "IMMEDIATE", "READ_ONLY"])
+        with self.assertRaises(ValueError):
+            validate_edit(p, "1")
+        for storage in ("FLASH", ""):
+            with self.assertRaises(ValueError):
+                parameter_from_fields(["id", "int", "0", "0", "7", "A", "A", storage, "REBOOT", "EDITABLE"])
+
     def test_short_float_roundtrip_and_integer_type(self):
         self.assertEqual(format_value(0.200000003), "0.2")
         self.assertEqual(format_value(0.00001), "0.00001")

@@ -8,16 +8,16 @@
 
 | 配置 | 当前值 | 说明 |
 | --- | --- | --- |
-| 飞机身份 | `FPLANE` | F 节点，属于左侧从机链路 |
-| 组合规模 | `SEVENPLANE` | 七机组合构型 |
-| 工作方式 | `TEAM` | 多机协同模式 |
-| 奇偶构型 | `ODD` | 奇数机体构型 |
+| 飞机身份 | EEPROM `aircraft_id` | 默认 0 未配置，1=A～7=G，重启生效 |
+| 组合规模 | EEPROM `aircraft_count` | 默认 3，支持 1/3/4/5/7，重启生效 |
+| 工作方式 | `aircraft_count == 1` | 1 为单机，其余为编队；`TEAM` 保留为存储配置标识 |
+| 奇偶构型 | `aircraftCount() % 2` | 从启动数量计算 |
 | IMU 路径 | `INTIMU` | 使用本机 IMU |
 | 接收机 | `USE_SBUS_RX` | 使用 SBUS 接收机 |
 | 俯仰控制 | `TESTINDI` | 增稳状态下启用俯仰 INDI |
 | 机型配置 | `expensive` | 启用贵飞机专用限幅和启动逻辑 |
 
-飞机身份和控制配置目前是源码宏。给其他节点烧录前，必须修改相应宏并重新编译，不能直接复用当前 F 机固件。
+同一硬件/算法配置下，单机和编队节点共用同一个固件，通过 USB 设置身份和数量并重启。单机设 `aircraft_id=1`、`aircraft_count=1`；已保存增益保留，切换后应确认调参。存储声明与校验见 [统一参数与持久存储](parameter-storage.md)。
 
 ## 开发环境
 
@@ -29,7 +29,7 @@
 - 上传协议：`teensy-gui`
 - 串口监视器：921600 baud
 
-固件依赖由 `platformio.ini` 和 `lib/` 管理；电脑参数软件的 Python 依赖单独位于 `tools/parameter_console/requirements.txt`。
+固件依赖由 `platformio.ini` 和 `lib/` 管理；电脑参数软件的 Python 依赖单独位于 `tools/ground_station/requirements.txt`。
 
 ## VS Code Teensy 板上断点调试
 
@@ -40,13 +40,15 @@
 
 通过 `Wire1` 接入（SDA=17、SCL=16，7 位地址 `0x06`），与 OLED 和空速传感器共用 I²C。驱动位于 `lib/MT6701/`，按提供的示例先读 `0x03` 再读 `0x04`，将 14 位无符号值换算为 0～360°。`sensor_processing.cpp` 负责初始化、每周期采样、零点和安装方向，主函数只调用初始化与读取接口。
 
-`relativeAngle_ready` 是减去本机零点后的夹角，跨 0°/360° 时转换到 ±180°；A/B/D/F 反向，C/E/G 正向。原来的按键清零继续写飞控 EEPROM 地址 100；更换传感器后应重新清零。读取失败时保留最后有效值，屏幕 `Relat` 显示 `ERR`，每 20 ms 重试且禁止保存错误零点。原有日志和机间状态帧继续使用该夹角。
+`relativeAngle_ready` 是 MT6701 减去本机零点后的测量夹角，跨 0°/360° 时转换到 ±180°；A/B/D/F 反向，C/E/G 正向。按键清零经统一参数服务保存 `mt6701_zero`（默认 EEPROM）；更换传感器后应重新清零。读取失败时保留最后有效值，每 20 ms 重试且禁止保存错误零点。MT6701 仅用于测量与 SD 日志记录。
 
-默认每控制周期读取一次，无额外延时或串口输出。`userotatesensor` 仍控制控制器是否使用测量夹角，当前未启用。编译与驱动模拟测试已通过，接线、安装方向和实际循环耗时需要板上确认。
+默认每控制周期读取一次，无额外延时或串口输出。构型控制、控制分配、OLED `Relat`、USB/数传构型与机间相对角恢复使用 tag0.1 默认分支的相邻 IMU 滚转差，移除 `userotatesensor` 控制分支。OLED 没有有效下游姿态时显示 `--`。地面站完整构型需要连接 A 主机；机翼按 B—A—C 等物理顺序连接。编译与驱动模拟测试已通过，接线、安装方向和实际循环耗时需要板上确认。
 
-## USB 参数配置软件
+## USB 地面站
 
-电脑端软件位于 `tools/parameter_console/`，提供 57 项参数读取/就地修改（最多支持 512 项）、SD 自动保存、列排序及支持十六进制显示的串口助手。参数类型显示为 `float` / `int`；双击当前值编辑，Enter 保存，Esc 取消。双击 `tools/parameter_console/dist/CoFlyParameterConsole.exe` 可启动；源码启动、协议、SD 恢复见 [参数软件使用说明](../tools/parameter_console/README.md)。飞控开机在 SD 初始化后自动加载参数，修改成功后下次控制周期使用新值。
+应用提供通讯连接、室内/室外配色与字体、参数、传感器、遥控器和飞行数据页。新增地面站协议与参数协议共用 USB Serial；校准、传感器设置及模式映射暂为明确返回 `NOT_IMPLEMENTED` 的接口。使用与实现范围见 [地面站说明](../tools/ground_station/README.md)。
+
+电脑端软件位于 `tools/ground_station/`，提供 75 项参数读取/就地修改（最多支持 512 项）、EEPROM/SD 按项保存、重启生效提示、列排序及支持十六进制显示的串口助手。参数类型显示为 `float` / `int`；双击当前值编辑，Enter 保存，Esc 取消。双击 `tools/ground_station/dist/CoFlyGroundStation.exe` 可启动；源码启动、协议、SD 恢复见 [参数软件使用说明](../tools/ground_station/README.md)。飞控开机在 SD 初始化后自动加载参数，立即生效参数修改成功后下次控制周期使用新值；身份和数量重启生效。
 
 ## PWM 中位与安装微调
 
@@ -77,7 +79,7 @@ applyAndTransmitActuatorCommands();
 
 机间命令帧仍为 50 字节，但字段含义已改变，七架飞机须同步更新固件；旧固件不能混用。各机的 `pwm_channel1_trim`、`pwm_channel2_trim`、`pwm_channel3_trim` 保存本机安装偏置，需在对应机体上调整并保存参数。
 
-A 机在 `#if defined APLANE` 中准备本机 `Local_*_control_us` 和子机缓存，B～G 从上级命令获取本机偏移；`#endif` 后所有飞机共同计算副翼补偿与最终物理 PWM。A 机没有升降舵上级前馈，其 `Local_ele_ff_control_us` 每周期设为零。
+A 机在 `aircraftId() == 1` 分支中准备本机 `Local_*_control_us` 和子机缓存，B～G 从上级命令获取本机偏移；分支后所有飞机共同计算副翼补偿与最终物理 PWM。A 机没有升降舵上级前馈，其 `Local_ele_ff_control_us` 每周期设为零。
 
 油门机间字段传递有符号控制偏移；各机在本地应用 `PWM_CENTER_US`、油门 rev/trim 和最终输出保护。参数 `usb_throttle_debug` 保留为油门调试开关，诊断函数输出接收的偏移和上级帧状态。
 

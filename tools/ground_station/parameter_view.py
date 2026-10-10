@@ -65,12 +65,11 @@ class ParameterConsole:
         style = ttk.Style()
         style.theme_use("clam")
         style.configure("Treeview", rowheight=27)
-        outer = ttk.Frame(self.root, padding=12)
+        outer = ttk.Frame(getattr(self, "parameter_parent", self.root), padding=12)
         outer.pack(fill="both", expand=True)
-        connection = ttk.Frame(outer)
+        connection = ttk.Frame(getattr(self, "connection_parent", outer))
         outer.columnconfigure(0, weight=1)
         outer.rowconfigure(2, weight=3)
-        outer.rowconfigure(5, weight=2)
         connection.grid(row=0, column=0, sticky="ew", pady=(0, 8))
         ttk.Label(connection, text="串口").pack(side="left")
         self.port_box = ttk.Combobox(connection, textvariable=self.port, width=19)
@@ -83,9 +82,13 @@ class ParameterConsole:
         self.baud_box.pack(side="left")
         self.connect_button = ttk.Button(connection, text="连接", command=self.toggle_connection)
         self.connect_button.pack(side="left", padx=10)
-        self.read_button = ttk.Button(connection, text="读取参数", command=self.read_parameters)
+        commands = connection
+        if hasattr(self, "connection_parent"):
+            commands = ttk.Frame(self.connection_parent)
+            commands.grid(row=1, column=0, sticky="w", pady=12)
+        self.read_button = ttk.Button(commands, text="读取参数", command=self.read_parameters)
         self.read_button.pack(side="left")
-        self.help_button = ttk.Button(connection, text="命令说明", command=self.send_help)
+        self.help_button = ttk.Button(commands, text="命令说明", command=self.send_help)
         self.help_button.pack(side="left", padx=8)
 
         ttk.Label(outer, textvariable=self.status, wraplength=710).grid(row=1, column=0, sticky="w", pady=(0, 8))
@@ -95,14 +98,14 @@ class ParameterConsole:
         search.pack(fill="x", pady=(0, 6))
         ttk.Label(search, text="筛选").pack(side="left")
         ttk.Entry(search, textvariable=self.filter_text, width=30).pack(side="left", padx=8)
-        ttk.Label(search, text="双击当前值编辑；Enter 保存到内存和 SD，Esc 取消").pack(side="left")
+        ttk.Label(search, text="双击当前值编辑；Enter 保存到指定介质，Esc 取消").pack(side="left")
         self.filter_text.trace_add("write", lambda *_: self._render_table())
         grid = ttk.Frame(parameter_area)
         grid.pack(fill="both", expand=True)
-        columns = ("group", "name", "dtype", "value", "bounds", "description")
+        columns = ("group", "name", "dtype", "value", "bounds", "storage", "description")
         self.tree = ttk.Treeview(grid, columns=columns, show="headings", selectmode="browse", height=10)
-        for column, label, width in zip(columns, ("分组", "参数名", "类型", "当前值", "允许范围", "说明"),
-                                        (100, 210, 80, 100, 140, 300)):
+        for column, label, width in zip(columns, ("分组", "参数名", "类型", "当前值", "允许范围", "存储", "说明"),
+                                        (100, 210, 80, 100, 140, 85, 300)):
             self.tree.heading(column, text=label, command=lambda c=column: self._sort_heading(c))
             self.tree.column(column, width=width, minwidth=70, stretch=column == "description")
         vertical = ttk.Scrollbar(grid, orient="vertical", command=lambda *args: self._scroll_table("y", *args))
@@ -118,8 +121,18 @@ class ParameterConsole:
         self.tree.bind("<Configure>", lambda _: self._cancel_edit())
         self.tree.bind("<MouseWheel>", lambda _: self._cancel_edit())
 
-        terminal_tools = ttk.Frame(outer)
-        terminal_tools.grid(row=4, column=0, sticky="ew", pady=(0, 6))
+        terminal_outer = outer
+        terminal_row = 4
+        if hasattr(self, "terminal_parent"):
+            terminal_outer = ttk.Frame(self.terminal_parent, padding=12)
+            terminal_outer.pack(fill="both", expand=True)
+            terminal_outer.columnconfigure(0, weight=1)
+            terminal_outer.rowconfigure(1, weight=1)
+            terminal_row = 0
+        else:
+            outer.rowconfigure(5, weight=2)
+        terminal_tools = ttk.Frame(terminal_outer)
+        terminal_tools.grid(row=terminal_row, column=0, sticky="ew", pady=(0, 6))
         ttk.Button(terminal_tools, text="清空", command=lambda: self._clear_terminal()).pack(side="left")
         ttk.Button(terminal_tools, text="导出窗口内容", command=self.export_terminal).pack(side="left", padx=8)
         self.record_button = ttk.Button(terminal_tools, text="记录全部接收", command=self.toggle_recording)
@@ -127,8 +140,8 @@ class ParameterConsole:
         ttk.Checkbutton(terminal_tools, text="自动滚动", variable=self.follow).pack(side="left", padx=12)
         ttk.Checkbutton(terminal_tools, text="16 进制显示", variable=self.hex_display,
                         command=self._rebuild_terminal).pack(side="left")
-        terminal_frame = ttk.Frame(outer)
-        terminal_frame.grid(row=5, column=0, sticky="nsew")
+        terminal_frame = ttk.Frame(terminal_outer)
+        terminal_frame.grid(row=terminal_row + 1, column=0, sticky="nsew")
         self.terminal = tk.Text(terminal_frame, width=1, height=8, wrap="none", state="disabled",
                                 background="#18222e", foreground="#e7edf3",
                                 insertbackground="white", font=("Consolas", 10))
@@ -140,8 +153,8 @@ class ParameterConsole:
         terminal_x.grid(row=1, column=0, sticky="ew")
         terminal_frame.rowconfigure(0, weight=1)
         terminal_frame.columnconfigure(0, weight=1)
-        send_area = ttk.Frame(outer)
-        send_area.grid(row=6, column=0, sticky="ew", pady=(8, 0))
+        send_area = ttk.Frame(terminal_outer)
+        send_area.grid(row=terminal_row + 2, column=0, sticky="ew", pady=(8, 0))
         self.send_frame = send_area
         ttk.Label(send_area, text="发送").pack(side="left")
         self.command_box = ttk.Entry(send_area, textvariable=self.command)
@@ -233,7 +246,7 @@ class ParameterConsole:
 
     def _begin_cell_edit(self, name):
         self._cancel_edit()
-        if not self.connected or self.pending or name not in self.parameters:
+        if not self.connected or self.pending or name not in self.parameters or self.parameters[name].read_only:
             return
         bounds = self.tree.bbox(name, "value")
         if not bounds:
@@ -267,7 +280,7 @@ class ParameterConsole:
                         "deadline": time.monotonic() + 8, "count": None}
         self.received_parameters = {}
         self.worker.send(command.encode("ascii"))
-        self.status.set("正在读取参数…" if kind == "READ" else f"正在保存 {name} 到内存和 SD…")
+        self.status.set("正在读取参数…" if kind == "READ" else f"正在保存 {name} 到 {self.parameters[name].storage}…")
         self._update_controls()
 
     def read_parameters(self):
@@ -308,7 +321,8 @@ class ParameterConsole:
                 continue
             self.tree.insert("", "end", iid=name, values=(p.group, name,
                              p.dtype, format_value(p.value, p.dtype),
-                             f"{format_value(p.minimum, p.dtype)} ～ {format_value(p.maximum, p.dtype)}", p.description))
+                             f"{format_value(p.minimum, p.dtype)} ～ {format_value(p.maximum, p.dtype)}", p.storage,
+                             p.description))
         self._apply_sort()
         if selection and self.tree.exists(selection[0]):
             self.tree.selection_set(selection[0])
@@ -317,7 +331,7 @@ class ParameterConsole:
         self._cancel_edit()
         self.sort_reverse = not self.sort_reverse if self.sort_column == column else False
         self.sort_column = column
-        labels = dict(zip(self.tree["columns"], ("分组", "参数名", "类型", "当前值", "允许范围", "说明")))
+        labels = dict(zip(self.tree["columns"], ("分组", "参数名", "类型", "当前值", "允许范围", "存储", "说明")))
         for key, label in labels.items():
             self.tree.heading(key, text=label + (" ▼" if self.sort_reverse else " ▲") if key == column else label)
         self._apply_sort()
@@ -352,6 +366,9 @@ class ParameterConsole:
                     "NO_SD": "SD 卡不可用，内存未修改",
                     "SD_WRITE": "SD 保存或读回校验失败，内存未修改",
                     "RANGE": "数值超出范围或不是有效数字",
+                    "READ_ONLY": "此参数由固件管理，只能读取",
+                    "LOCK_REQUIRED": "请先锁定飞机再修改",
+                    "SAVE_FAILED": "配置组合无效，或持久存储写入/校验失败；请重新读取",
                 }
                 self._finish_request("失败：" + messages.get(fields[0], " / ".join(fields)))
             elif self.pending["kind"] == "READ":
@@ -380,11 +397,11 @@ class ParameterConsole:
                     self._render_table()
                     pending = self.pending
                     storage = "SD 就绪" if pending["storage"] == "SD_READY" else "SD 不可用"
-                    source = {"LOADED": "从 SD 加载", "SAVED": "已保存到 SD", "DEFAULTS": "源码默认值",
+                    source = {"LOADED": "从持久参数加载", "SAVED": "已保存", "DEFAULTS": "源码默认值",
                               "MIGRATED": "已迁移到新参数表", "MIGRATION_PENDING": "已加载旧值，SD 迁移待完成"}.get(
                         pending["source"], pending["source"])
                     stats = pending.get("migration_stats")
-                    details = (f" · 开机匹配 {stats[0]} / 默认 {stats[1]} / 跳过旧项 {stats[2]}"
+                    details = ((f" · SD 匹配 {stats[0]} / 其余 EEPROM 或默认 {stats[1]} / 跳过旧项 {stats[2]}" if pending["profile"].startswith("BOARD-") else f" · 开机匹配 {stats[0]} / 默认 {stats[1]} / 跳过旧项 {stats[2]}")
                                if stats and (stats[1] or stats[2]) else "")
                     self._finish_request(f"已读取 {len(self.parameters)} 项 · {pending['profile']} · {storage} · {source}{details}")
             elif kind == "OK" and len(fields) in (3, 4):
@@ -400,7 +417,7 @@ class ParameterConsole:
                 self.parameters[name] = replace(self.parameters[name], value=value)
                 self._render_table()
                 self.new_value.set(f"{format_value(value, self.parameters[name].dtype)}")
-                self._finish_request(f"{name} = {format_value(value, self.parameters[name].dtype)}，已写入内存并保存 SD")
+                self._finish_request(f"{name} = {format_value(value, self.parameters[name].dtype)}，已保存 {self.parameters[name].storage}" + ("；重启后生效" if self.parameters[name].effect == "REBOOT" else ""))
         except (ValueError, KeyError) as exc:
             self._finish_request(f"响应错误：{exc}")
 

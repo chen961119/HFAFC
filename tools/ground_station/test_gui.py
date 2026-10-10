@@ -82,6 +82,21 @@ class MockFlightController:
 
 
 class GuiTests(unittest.TestCase):
+    def test_eeprom_reboot_ack_and_read_only_editor(self):
+        self.app.connected = True
+        self.app.parameters = {
+            "aircraft_id": Parameter("aircraft_id", 1, 0, 7, "Aircraft", "Identity", "int", "EEPROM", "REBOOT"),
+            "valid": Parameter("valid", 0, 0, 1, "IMU", "Valid", "int", "EEPROM", "IMMEDIATE", True),
+        }
+        self.app._render_table()
+        self.app.pending = {"id": 9, "kind": "SET", "name": "aircraft_id"}
+        self.app._handle_reply((9, "OK", ["aircraft_id", "int", "2", "SAVED"]))
+        self.assertIn("EEPROM", self.app.status.get())
+        self.assertIn("重启后生效", self.app.status.get())
+        self.assertEqual(self.app.tree.set("aircraft_id", "storage"), "EEPROM")
+        self.app._begin_cell_edit("valid")
+        self.assertIsNone(self.app.edit_box)
+
     def setUp(self):
         self.device = MockFlightController()
         self.root = tk.Tk()
@@ -125,7 +140,7 @@ class GuiTests(unittest.TestCase):
         self.wait_for(lambda: self.app.pending is None)
         self.assertEqual(self.device.value, "0.75")
         self.assertEqual(self.app.parameters["Kp_roll_angle"].value, 0.75)
-        self.assertIn("已写入内存并保存 SD", self.app.status.get())
+        self.assertIn("已保存 SD", self.app.status.get())
 
         self.app.new_value.set("0.9")
         self.app.write_parameter()
@@ -211,7 +226,7 @@ class GuiTests(unittest.TestCase):
         self.app.pending = {"id": 9, "kind": "SET", "name": "p2"}
         self.app._handle_reply((9, "OK", ["p2", "int", "0", "SAVED"]))
         self.assertEqual(self.app.parameters["p2"].value, 0)
-        self.assertIn("已写入", self.app.status.get())
+        self.assertIn("已保存", self.app.status.get())
 
     def test_hex_switch_preserves_raw_bytes_and_text_history(self):
         wire = "中文日志\n".encode() + bytes([0, 255, 10])

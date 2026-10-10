@@ -52,7 +52,7 @@ CoFly Autopilot（Collaborative Distributed Autopilot，分布式协同飞控系
 
 ## 兼容性与维护入口
 
-项目名称、参数软件、USB 响应前缀 `@COFLY`、SD 文件头 `COFLY_PARAMS_V1/V2/V3` 及调试宏 `COFLY_TEENSY_DEBUG` 已统一使用 CoFly。固件与参数软件必须同步更新；改名前的 USB 响应与 SD 文件头不再识别。更新固件前应记录本机参数，更新后通过新版参数软件重新设置并保存，避免旧文件被拒绝后使用默认值。
+项目名称、参数软件、USB 响应前缀 `@COFLY`、SD 文件头 `COFLY_PARAMS_V5` 及调试宏 `COFLY_TEENSY_DEBUG` 已统一使用 CoFly。参数存储仅支持当前 SD V5 和 EEPROM V3，不导入旧格式。仅有旧格式数据时，更新后通过地面站重新设置参数并完成校准。
 
 修改身份与机数使用 `flight_config.h`；接线修改使用 `serial_ports.h` 和具体传感器/执行器模块；控制律与混控修改使用 `control_modes.cpp`；级联协议修改使用 `interaircraft_comm.cpp`。50 字节级联命令中的 PWM 旧字段名实际承载控制偏移，所有节点须使用一致的字段语义。
 

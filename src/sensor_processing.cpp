@@ -1,3 +1,6 @@
+#include "parameter_service.h"
+#include "imu_calibration_integrity.h"
+#include "aircraft_config.h"
 #include "serial_ports.h"
 #include "sensor_processing.h"
 #include "flight_config.h"
@@ -6,7 +9,6 @@
 #include "MS4525.h"
 #include "MT6701.h"
 #include <cmath>
-#include <EEPROM.h>
 #include <cstring>
 #include <Wire.h>
 #if defined USE_BAROMETER
@@ -121,6 +123,9 @@ void calibrateAttitude() {
 SPISettings bmiSettings(10000000, MSBFIRST, SPI_MODE3);
 FC_Binary_Packet airdata;
 CalibrationAccGyroData calAccGyroData;
+namespace { CalibrationAccGyroData appliedImuCalibration; }
+int32_t imuCalibrationValidParameter = 0, imuCalibrationModelParameter = 1;
+int32_t imuCalibrationChecksumParameter = 0;
 int32_t Strain_value1 = 0;
 int32_t Strain_value2 = 0;
 int32_t Strain_value3 = 0;
@@ -414,13 +419,13 @@ void getBMI088data() {
   int16_t rgz = (int16_t)(buf[4] | (buf[5] << 8));
 
   // 按安装方向绕 Z 轴旋转 90°：新 X=旧 Y，新 Y=-旧 X，Z 不变。
-  AccX_6050 = (ry * inv_acc) - calAccGyroData.AccErrorX_6050;
-  AccY_6050 = (-rx * inv_acc) - calAccGyroData.AccErrorY_6050;
-  AccZ_6050 = (rz * inv_acc) - calAccGyroData.AccErrorZ_6050;
+  AccX_6050 = (ry * inv_acc) - appliedImuCalibration.AccErrorX_6050;
+  AccY_6050 = (-rx * inv_acc) - appliedImuCalibration.AccErrorY_6050;
+  AccZ_6050 = (rz * inv_acc) - appliedImuCalibration.AccErrorZ_6050;
 
-  GyroX_6050 = (rgy * inv_gyr) - calAccGyroData.GyroErrorX_6050;
-  GyroY_6050 = (-rgx * inv_gyr) - calAccGyroData.GyroErrorY_6050;
-  GyroZ_6050 = (rgz * inv_gyr) - calAccGyroData.GyroErrorZ_6050;
+  GyroX_6050 = (rgy * inv_gyr) - appliedImuCalibration.GyroErrorX_6050;
+  GyroY_6050 = (-rgx * inv_gyr) - appliedImuCalibration.GyroErrorY_6050;
+  GyroZ_6050 = (rgz * inv_gyr) - appliedImuCalibration.GyroErrorZ_6050;
 
   // --- C. 应用低通滤波 (保留你原有的 B_accel_6050 参数逻辑) ---
   /*
@@ -522,7 +527,6 @@ void writeReg(TwoWire &bus, uint8_t addr, uint8_t reg, uint8_t val) {
 
 
 float relativeAngle_raw, relativeAngle_ready, relativeAngle_offset;
-const int eepromAddress1 = 100;
 
 
 namespace {
@@ -586,11 +590,10 @@ float GyroX_prev_9250, GyroY_prev_9250, GyroZ_prev_9250;
 float MagX_9250, MagY_9250, MagZ_9250;
 float MagX_prev_9250, MagY_prev_9250, MagZ_prev_9250;
 
-// 从 EEPROM 地址 100 恢复转角传感器清零偏置。
+// 转角零偏由统一参数服务恢复。
 void loadRotateSensorOffset() {
-  EEPROM.get(eepromAddress1, relativeAngle_offset);
-  if (!std::isfinite(relativeAngle_offset) || relativeAngle_offset < 0 ||
-      relativeAngle_offset >= 360) relativeAngle_offset = 0;
+  // Already restored and range checked by the unified parameter service.
+
 }
 // 调用空速传感器驱动进行零点标定。
 void calibrateAirspeedSensor() { airspeedSensor.calib(); }
@@ -697,9 +700,9 @@ void getIMUdata() {
   AccY_6050 = AcY_6050 / ACCEL_SCALE_FACTOR;
   AccZ_6050 = AcZ_6050 / ACCEL_SCALE_FACTOR;
   // MPU6050 加速度零偏校正。
-  AccX_6050 = AccX_6050 - calAccGyroData.AccErrorX_6050;
-  AccY_6050 = AccY_6050 - calAccGyroData.AccErrorY_6050;
-  AccZ_6050 = AccZ_6050 - calAccGyroData.AccErrorZ_6050;
+  AccX_6050 = AccX_6050 - appliedImuCalibration.AccErrorX_6050;
+  AccY_6050 = AccY_6050 - appliedImuCalibration.AccErrorY_6050;
+  AccZ_6050 = AccZ_6050 - appliedImuCalibration.AccErrorZ_6050;
   // MPU6050 加速度一阶低通。
   AccX_6050 = (1.0 - B_accel_6050) * AccX_prev_6050 + B_accel_6050 * AccX_6050;
   AccY_6050 = (1.0 - B_accel_6050) * AccY_prev_6050 + B_accel_6050 * AccY_6050;
@@ -712,9 +715,9 @@ void getIMUdata() {
   AccY_9250 = AcY_9250 / ACCEL_SCALE_FACTOR;
   AccZ_9250 = AcZ_9250 / ACCEL_SCALE_FACTOR;
   // MPU9250 加速度零偏校正。
-  AccX_9250 = AccX_9250 - calAccGyroData.AccErrorX_9250;
-  AccY_9250 = AccY_9250 - calAccGyroData.AccErrorY_9250;
-  AccZ_9250 = AccZ_9250 - calAccGyroData.AccErrorZ_9250;
+  AccX_9250 = AccX_9250 - appliedImuCalibration.AccErrorX_9250;
+  AccY_9250 = AccY_9250 - appliedImuCalibration.AccErrorY_9250;
+  AccZ_9250 = AccZ_9250 - appliedImuCalibration.AccErrorZ_9250;
   // MPU9250 加速度一阶低通。
   AccX_9250 = (1.0 - B_accel_9250) * AccX_prev_9250 + B_accel_9250 * AccX_9250;
   AccY_9250 = (1.0 - B_accel_9250) * AccY_prev_9250 + B_accel_9250 * AccY_9250;
@@ -728,9 +731,9 @@ void getIMUdata() {
   GyroY_6050 = GyY_6050 / GYRO_SCALE_FACTOR;
   GyroZ_6050 = GyZ_6050 / GYRO_SCALE_FACTOR;
   // MPU6050 陀螺仪零偏校正。
-  GyroX_6050 = GyroX_6050 - calAccGyroData.GyroErrorX_6050;
-  GyroY_6050 = GyroY_6050 - calAccGyroData.GyroErrorY_6050;
-  GyroZ_6050 = GyroZ_6050 - calAccGyroData.GyroErrorZ_6050;
+  GyroX_6050 = GyroX_6050 - appliedImuCalibration.GyroErrorX_6050;
+  GyroY_6050 = GyroY_6050 - appliedImuCalibration.GyroErrorY_6050;
+  GyroZ_6050 = GyroZ_6050 - appliedImuCalibration.GyroErrorZ_6050;
   // MPU6050 角速度一阶低通。
   GyroX_6050 = (1.0 - B_gyro_6050) * GyroX_prev_6050 + B_gyro_6050 * GyroX_6050;
   GyroY_6050 = (1.0 - B_gyro_6050) * GyroY_prev_6050 + B_gyro_6050 * GyroY_6050;
@@ -743,9 +746,9 @@ void getIMUdata() {
   GyroY_9250 = GyY_9250 / GYRO_SCALE_FACTOR;
   GyroZ_9250 = GyZ_9250 / GYRO_SCALE_FACTOR;
   // MPU9250 陀螺仪零偏校正。
-  GyroX_9250 = GyroX_9250 - calAccGyroData.GyroErrorX_9250;
-  GyroY_9250 = GyroY_9250 - calAccGyroData.GyroErrorY_9250;
-  GyroZ_9250 = GyroZ_9250 - calAccGyroData.GyroErrorZ_9250;
+  GyroX_9250 = GyroX_9250 - appliedImuCalibration.GyroErrorX_9250;
+  GyroY_9250 = GyroY_9250 - appliedImuCalibration.GyroErrorY_9250;
+  GyroZ_9250 = GyroZ_9250 - appliedImuCalibration.GyroErrorZ_9250;
   // MPU9250 角速度一阶低通。
   GyroX_9250 = (1.0 - B_gyro_9250) * GyroX_prev_9250 + B_gyro_9250 * GyroX_9250;
   GyroY_9250 = (1.0 - B_gyro_9250) * GyroY_prev_9250 + B_gyro_9250 * GyroY_9250;
@@ -774,22 +777,6 @@ void getIMUdata() {
 
 namespace {
 bool imuCalibrationReady = false;
-// 0～47 保留原有结构体，100 为转角零偏；64～71 存校准标记和校验。
-constexpr int imuCalibrationTagAddress = 64;
-constexpr int imuCalibrationChecksumAddress = 68;
-constexpr uint32_t imuCalibrationTag = 0x494D5531;
-static_assert(sizeof(CalibrationAccGyroData) <= imuCalibrationTagAddress,
-              "IMU calibration overlaps EEPROM metadata");
-
-uint32_t imuCalibrationChecksum(const CalibrationAccGyroData &data) {
-  const auto *bytes = reinterpret_cast<const uint8_t *>(&data);
-  uint32_t hash = 2166136261u;
-  for (size_t i = 0; i < sizeof(data); ++i) {
-    hash = (hash ^ bytes[i]) * 16777619u;
-  }
-  return hash;
-}
-
 bool validImuOffsets(const CalibrationAccGyroData &data) {
   const float values[] = {data.AccErrorX_6050, data.AccErrorY_6050,
                          data.AccErrorZ_6050, data.GyroErrorX_6050,
@@ -863,6 +850,7 @@ void calculate_IMU_error() {
     delayMicroseconds(100);
   }
 
+  const CalibrationAccGyroData old = calAccGyroData;
   // 4. 计算均值并补偿 Z 轴重力 (假设平放时 Z 应为 1g)
   calAccGyroData.AccErrorX_6050 = (float)(sAX / c);
   calAccGyroData.AccErrorY_6050 = (float)(sAY / c);
@@ -872,24 +860,18 @@ void calculate_IMU_error() {
   calAccGyroData.GyroErrorY_6050 = (float)(sGY / c);
   calAccGyroData.GyroErrorZ_6050 = (float)(sGZ / c);
 
-  if (!validImuOffsets(calAccGyroData)) {
-    calAccGyroData = {};
-    imuCalibrationReady = false;
+  const CalibrationAccGyroData measured = calAccGyroData;
+  calAccGyroData = old;
+  float offsets[12];
+  static_assert(sizeof(measured) == sizeof(offsets), "Calibration field layout changed");
+  memcpy(offsets, &measured, sizeof(offsets));
+  if (!validImuOffsets(measured) || !saveImuCalibrationParameters(offsets)) {
+    USBSerial.println("\nIMU calibration save failed; calibration not accepted.");
+    loadImuCalibration();
     return;
   }
-
-  // 5. 存入 EEPROM，并回读确认；保留原有数据地址。
-  int addr = 0;
-  byte *p = (byte *)&calAccGyroData;
-  for (unsigned int i = 0; i < sizeof(CalibrationAccGyroData); i++) {
-    EEPROM.write(addr++, p[i]);
-  }
-  EEPROM.put(imuCalibrationChecksumAddress, imuCalibrationChecksum(calAccGyroData));
-  EEPROM.put(imuCalibrationTagAddress, imuCalibrationTag);
   loadImuCalibration();
-
-  USBSerial.println(
-      "\nBMI088 SPI Rotation Calibration Complete & Saved to EEPROM.");
+  USBSerial.println("\nBMI088 calibration verified and saved.");
 }
 
 
@@ -1025,20 +1007,18 @@ void getRotateSensor1() {
   angleReadValid = angleSensor.readAngle(angle);
   if (!angleReadValid) return; // 保持最后有效角度，屏幕通过状态显示 ERR。
   relativeAngle_raw = angle;
-#if defined CPLANE || defined EPLANE || defined GPLANE
-  constexpr bool reverse = false;
-#else // A/B/D/F 的安装正方向相反。
-  constexpr bool reverse = true;
-#endif
+  const bool reverse = !aircraftIsRight();
   relativeAngle_ready = MT6701::relativeAngle(angle, relativeAngle_offset, reverse);
 }
 
-// 将当前原始转角设为新零点，并将偏置写入 EEPROM 地址 100。
+// 将当前原始转角设为新零点，经统一参数服务保存。
 void ResetRotateSensor() {
   if (!angleReadValid) return; // 未连接或读取失败时不覆盖已保存零点。
-  relativeAngle_offset = relativeAngle_raw;         // 计算新偏移量
+  if (!saveParameterValue(1201, relativeAngle_raw)) {
+    USBSerial.println("MT6701 zero save failed");
+    return;
+  }
   relativeAngle_ready = 0;
-  EEPROM.put(eepromAddress1, relativeAngle_offset); // 存储到 EEPROM
   USBSerial.println("Zero Set! Offset: " + String(relativeAngle_offset));
 }
 
@@ -1047,29 +1027,16 @@ void ResetRotateSensor() {
 
 
 
-// 从 EEPROM 地址 0 恢复惯性传感器零偏结构体。
+// 验证已恢复的惯性传感器校准参数。
 void loadImuCalibration() {
-  // 从 EEPROM 地址 0 开始恢复 BMI088 零偏结构体。
-  int address = 0;
-  byte *pData = (byte *)&calAccGyroData;
-  for (int i = 0; i < sizeof(CalibrationAccGyroData); i++) {
-    pData[i] = EEPROM.read(address++);
-  }
-  uint32_t tag, checksum;
-  EEPROM.get(imuCalibrationTagAddress, tag);
-  EEPROM.get(imuCalibrationChecksumAddress, checksum);
-  // 旧固件未写标记：允许合理的非空 BMI088 校准数据继续使用。
-  bool allZero = true;
-  for (unsigned i = 0; i < 6 * sizeof(float); ++i) {
-    if (pData[i] != 0) allZero = false;
-  }
-  imuCalibrationReady = validImuOffsets(calAccGyroData) &&
-      (tag == imuCalibrationTag ? checksum == imuCalibrationChecksum(calAccGyroData)
-                               : !allZero && (tag == 0 || tag == 0xffffffffu));
+  float offsets[12]; memcpy(offsets,&calAccGyroData,sizeof(offsets));
+  imuCalibrationReady = imuCalibrationValidParameter == 1 &&
+      imuCalibrationModelParameter == 1 && validImuOffsets(calAccGyroData) &&
+      imuCalibrationChecksumParameter == imuCalibrationFingerprint(offsets,imuCalibrationModelParameter);
   if (!imuCalibrationReady) {
-    // 不让 EEPROM 中的 NaN/Inf 传播到姿态计算；不覆盖 EEPROM。
-    calAccGyroData = {};
+    imuCalibrationValidParameter = 0;
   }
+  appliedImuCalibration = imuCalibrationReady ? calAccGyroData : CalibrationAccGyroData{};
 }
 
 // 内置 IMU 启用时读取首帧 BMI088，并据此初始化姿态四元数。

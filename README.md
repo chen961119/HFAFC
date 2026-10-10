@@ -15,7 +15,7 @@ CoFly 表达协同飞行，Autopilot 明确飞控定位；项目名称不限定�
 
 当前实现是基于 Teensy 4.1、Arduino/Teensyduino 和 PlatformIO 的飞控固件，由 dRehmFlight 演化而来。它支持 A–G 节点的主从级联通信、姿态与构型控制、本机俯仰 INDI、执行器输出、SD 日志及 USB 参数配置。
 
-当前开发基线为七机串联构型 `F-D-B-A-C-E-G`，默认编译 F 从机。项目面向多种协同飞行场景；通用编队控制属于扩展方向，现有七机混控也尚未接入源码中保留的五体动态分配器。实现边界见 [架构说明](docs/architecture.md)。
+串联构型可扩展至 `F-D-B-A-C-E-G`，当前编译配置为 A 主机、三机组合。项目面向多种协同飞行场景；通用编队控制属于扩展方向，现有七机混控也尚未接入源码中保留的五体动态分配器。实现边界见 [架构说明](docs/architecture.md)。
 
 ## 快速开始
 
@@ -41,7 +41,7 @@ pio device monitor -e teensy41
 ## 配套工具
 
 - [飞行数据浏览器](tools/flight_data_browser/README.md)：读取 SD 日志，多文件对比、子图、飞行区段、FFT 和 CSV 导出。
-- [USB 参数配置与串口助手](tools/parameter_console/README.md)：读取、修改与保存本机参数，支持 SD 恢复和串口日志。
+- [USB 地面站](tools/ground_station/README.md)：读取、修改与保存本机参数，支持 SD 恢复和串口日志。
 - [Teensy 板上断点调试](tools/teensy_debug/README.md)：通过 `teensy41_debug` 环境与 VS Code 调试板上固件。
 
 ## 仓库结构
@@ -53,7 +53,7 @@ CoFly-Autopilot/
 ├── lib/                      # 随仓库保存的驱动和依赖库
 ├── tools/
 │   ├── flight_data_browser/  # Python 飞行日志读取与分析
-│   ├── parameter_console/    # USB 参数配置软件与测试
+│   ├── ground_station/    # USB 地面站与测试
 │   └── teensy_debug/         # 板上调试脚本与配置模板
 ├── docs/
 │   ├── README.md             # 文档导航
@@ -72,3 +72,5 @@ CoFly-Autopilot/
 详细资料见 [文档导航](docs/README.md)，目标需求和验收准则见 [软件需求说明](docs/requirements.md)。修改控制逻辑后应执行完整构建，涉及硬件行为的改动应记录地面验证及对应飞行试验结果。历史分析保留原版本的结论和行号，查找现行代码请使用架构文档中的模块入口。
 
 项目源码与文档统一使用 UTF-8；`.pio/`、`.vscode/`、Python 环境和打包产物属于本机生成文件，不提交到仓库。
+
+飞机身份与组合数量可通过 USB 参数页设置，A～G 共用同一硬件配置的固件；首次使用需配置身份并重启。[参数存储和迁移说明](docs/parameter-storage.md)。

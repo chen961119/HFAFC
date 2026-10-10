@@ -59,35 +59,20 @@ void printDesiredState() {
 void printConfigurationData() {
   if (current_time - print_counter > 10000) {
     print_counter = micros();
-#if defined userotatesensor
     USBSerial.print(F("phiab:"));
-    USBSerial.print(relativeAngle_ready);
+    USBSerial.print(phiB_raw - roll_IMU);
     USBSerial.print(F("phiac:"));
-    USBSerial.print(phiac);
+    USBSerial.print(phiC_raw - roll_IMU);
     USBSerial.print(F("phibd:"));
-    USBSerial.print(phibd);
+    USBSerial.print(phiD_raw - phiB_raw);
     USBSerial.print(F("phice:"));
-    USBSerial.print(phice);
+    USBSerial.print(phiE_raw - phiC_raw);
     USBSerial.print(F("phidf:"));
-    USBSerial.print(phidf);
+    USBSerial.print(phiF_raw - phiD_raw);
     USBSerial.print(F("phieg:"));
-    USBSerial.print(phieg);
-#else
-    USBSerial.print(F("phiab:"));
-    USBSerial.print(Phiab_Mea);
-    USBSerial.print(F("phiac:"));
-    USBSerial.print(Phiac_Mea);
-    USBSerial.print(F("phibd:"));
-    USBSerial.print(Phibd_Mea);
-    USBSerial.print(F("phice:"));
-    USBSerial.print(Phice_Mea);
-    USBSerial.print(F("phidf:"));
-    USBSerial.print(Phidf_Mea);
-    USBSerial.print(F("phieg:"));
-    USBSerial.print(Phieg_Mea);
+    USBSerial.print(phiG_raw - phiE_raw);
     USBSerial.print(F("phieq:"));
     USBSerial.print(roll_eq);
-#endif
     USBSerial.print(F("Pb:"));
     USBSerial.print(GYRO_X_B);
     USBSerial.print(F("Pc:"));

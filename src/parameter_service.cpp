@@ -1,5 +1,13 @@
+#include "parameter_record.h"
+#include "aircraft_config.h"
+#include "imu_calibration_integrity.h"
+#include "parameter_eeprom.h"
+#include "sensor_processing.h"
+#include "flight_lock.h"
 #include "serial_ports.h"
 #include "parameter_service.h"
+#include "ground_station_service.h"
+#include "device_reboot.h"
 #include "parameter_registry.h"
 #include "flight_config.h"
 #include <Arduino.h>
@@ -15,46 +23,17 @@ namespace {
 constexpr size_t MAX_PARAMETERS = 512;
 constexpr size_t LINE_SIZE = 512;
 // Plain decimal float32 text needs up to 56 bytes, including very small values.
-// 512 rows with names up to 96 bytes fit within 96 KiB, including the header.
+// Capacity is derived from the compatible name length, record size and row limit.
 // Shared by read/write only after the file is closed.
-constexpr size_t FILE_SIZE = 98304;
-constexpr size_t VALUE_SIZE = 64;
+constexpr size_t FILE_SIZE = MAX_PARAMETERS * PARAMETER_RECORD_SIZE + 256;
+constexpr size_t VALUE_SIZE = PARAMETER_VALUE_SIZE;
 const char *const primaryPath = "params.cfg";
 const char *const backupPath = "params_backup.cfg";
-const char *const legacyPaths[] = {"params0.cfg", "params1.cfg"};
 
-#if defined APLANE
-#define PARAM_AIRCRAFT "A"
-#elif defined BPLANE
-#define PARAM_AIRCRAFT "B"
-#elif defined CPLANE
-#define PARAM_AIRCRAFT "C"
-#elif defined DPLANE
-#define PARAM_AIRCRAFT "D"
-#elif defined EPLANE
-#define PARAM_AIRCRAFT "E"
-#elif defined FPLANE
-#define PARAM_AIRCRAFT "F"
-#elif defined GPLANE
-#define PARAM_AIRCRAFT "G"
-#else
-#error "Parameter storage requires an aircraft identity"
-#endif
 #if defined TEAM
 #define PARAM_CONTROL "TEAM"
 #else
 #define PARAM_CONTROL "SINGLE"
-#endif
-#if defined SEVENPLANE
-#define PARAM_SIZE "7"
-#elif defined FIVEPLANE
-#define PARAM_SIZE "5"
-#elif defined FOURPLANE
-#define PARAM_SIZE "4"
-#elif defined THREEPLANE
-#define PARAM_SIZE "3"
-#else
-#define PARAM_SIZE "1"
 #endif
 #if defined TESTINDI
 #define PARAM_INDI "INDI"
@@ -66,12 +45,13 @@ const char *const legacyPaths[] = {"params0.cfg", "params1.cfg"};
 #else
 #define PARAM_MODEL "STD"
 #endif
-const char profile[] = PARAM_AIRCRAFT "-" PARAM_CONTROL "-" PARAM_SIZE "-"
-                       PARAM_INDI "-" PARAM_MODEL;
+char profile[128];
+bool eepromLoaded[MAX_PARAMETERS];
 
 const FlightParameter *table;
 size_t count;
 bool storageReady;
+bool rebootRequired = false;
 const char *activePath = nullptr;
 uint32_t generation;
 char rxLine[LINE_SIZE];
@@ -89,6 +69,7 @@ char fileData[FILE_SIZE];
 double candidate[MAX_PARAMETERS];
 double previous[MAX_PARAMETERS];
 double verified[MAX_PARAMETERS];
+double guarded[MAX_PARAMETERS];
 bool fileSeen[MAX_PARAMETERS];
 const char *fileNames[MAX_PARAMETERS];
 const char *loadState = "DEFAULTS";
@@ -103,103 +84,18 @@ MigrationStats loadStats;
 
 // Bit inspection is intentional: the project enables -ffast-math, which can
 // optimize away ordinary isfinite() checks. Reject NaN/Inf before comparisons.
-bool finiteFloat(float value) {
-  uint32_t bits;
-  memcpy(&bits, &value, sizeof(bits));
-  return (bits & 0x7f800000UL) != 0x7f800000UL;
+using ParameterRecord::finiteFloat;
+using ParameterRecord::parseFloat;
+using ParameterRecord::parseUnsigned;
+bool validValue(size_t index,double value) {
+  return validParameterValue(table[index],value) &&
+      (table[index].id!=1002 || value==1 || value==3 || value==4 || value==5 || value==7);
 }
-
-bool parseFloat(const char *text, float &value) {
-  char *end;
-  errno = 0;
-  value = strtof(text, &end);
-  return end != text && *end == '\0' && errno != ERANGE && finiteFloat(value);
+bool parseValue(size_t index,const char *text,double &value) {
+  return ParameterRecord::parseValue(table[index],text,value) && validValue(index,value);
 }
-
-bool parseUnsigned(const char *text, uint32_t &value) {
-  if (!*text) return false;
-  uint64_t parsed = 0;
-  for (const char *p = text; *p; ++p) {
-    if (*p < '0' || *p > '9') return false;
-    parsed = parsed * 10 + (*p - '0');
-    if (parsed > UINT32_MAX) return false;
-  }
-  value = static_cast<uint32_t>(parsed);
-  return true;
-}
-
-bool validValue(size_t index, double value) {
-  const size_t length = strlen(table[index].name);
-  if (length >= 4 && !strcmp(table[index].name + length - 4, "_rev") &&
-      value != -1 && value != 1) return false;
-  return (table[index].integer || finiteFloat(static_cast<float>(value))) && value >= table[index].minimum &&
-         value <= table[index].maximum;
-}
-
-bool parseValue(size_t index, const char *text, double &value) {
-  if (!table[index].integer) {
-    float parsed;
-    if (!parseFloat(text, parsed)) return false;
-    value = parsed;
-  } else {
-    const char *digits = text;
-    if (*digits == '+' || *digits == '-') ++digits;
-    if (!*digits) return false;
-    for (const char *p = digits; *p; ++p)
-      if (*p < '0' || *p > '9') return false;
-    char *end;
-    errno = 0;
-    const long long parsed = strtoll(text, &end, 10);
-    if (errno == ERANGE || *end || parsed < INT32_MIN || parsed > INT32_MAX) return false;
-    value = static_cast<double>(parsed);
-  }
-  return validValue(index, value);
-}
-
-void formatValue(size_t index, double value, char *text, size_t capacity) {
-  if (table[index].integer) {
-    snprintf(text, capacity, "%ld", static_cast<long>(value));
-    return;
-  }
-  const float original = static_cast<float>(value);
-  // Shortest decimal that recovers exactly the same float32 bits.
-  char shortText[32];
-  for (int digits = 1; digits <= 9; ++digits) {
-    snprintf(shortText, sizeof(shortText), "%.*g", digits, value);
-    float parsed;
-    if (parseFloat(shortText, parsed) && !memcmp(&parsed, &original, sizeof(float))) break;
-  }
-  const char *exponent = strchr(shortText, 'e');
-  if (!exponent) {
-    snprintf(text, capacity, "%s", shortText);
-    return;
-  }
-  // Expand the rounded decimal text, preserving its digits without rounding
-  // the binary float again. No scientific notation in replies or SD files.
-  const bool negative = shortText[0] == '-';
-  const char *start = shortText + (negative ? 1 : 0);
-  char digits[16];
-  int length = 0, point = 0;
-  bool afterPoint = false;
-  for (const char *p = start; p < exponent; ++p) {
-    if (*p == '.') { afterPoint = true; continue; }
-    digits[length++] = *p;
-    if (!afterPoint) ++point;
-  }
-  point += atoi(exponent + 1);
-  size_t used = 0;
-  auto append = [&](char c) { if (used + 1 < capacity) text[used++] = c; };
-  if (negative) append('-');
-  if (point <= 0) {
-    append('0'); append('.');
-    for (int i = 0; i < -point; ++i) append('0');
-  }
-  for (int i = 0; i < length; ++i) {
-    if (i > 0 && i == point) append('.');
-    append(digits[i]);
-  }
-  for (int i = length; i < point; ++i) append('0');
-  text[used] = '\0';
+void formatValue(size_t index,double value,char *text,size_t capacity) {
+  ParameterRecord::formatValue(table[index],value,text,capacity);
 }
 
 uint32_t checksum(const char *bytes, size_t length) {
@@ -212,8 +108,7 @@ uint32_t checksum(const char *bytes, size_t length) {
   return ~crc;
 }
 
-// V3 restores valid rows by name; retired or changed rows use compiled defaults.
-// V1/V2 retain their original ordered-prefix validation.
+// Restore current-format records by name and type; missing entries use defaults.
 bool readParameterFile(const char *path, double *values, uint32_t &sequence,
                        bool *needsMigration = nullptr,
                        MigrationStats *stats = nullptr) {
@@ -247,102 +142,58 @@ bool readParameterFile(const char *path, double *values, uint32_t &sequence,
   char *save;
   char *line = strtok_r(data, "\n", &save);
   char header[128];
-  snprintf(header, sizeof(header), "COFLY_PARAMS_V1 %s", profile);
-  const bool legacy = line && !strcmp(line, header);
-  snprintf(header, sizeof(header), "COFLY_PARAMS_V2 %s", profile);
-  const bool v2 = line && !strcmp(line, header);
-  snprintf(header, sizeof(header), "COFLY_PARAMS_V3 %s", profile);
-  const bool v3 = line && !strcmp(line, header);
-  if (!legacy && !v2 && !v3) return false;
-  if (needsMigration && !v3) *needsMigration = true;
+  snprintf(header, sizeof(header), "COFLY_PARAMS_V5 %s", profile);
+  if (!line || strcmp(line,header)) return false;
   line = strtok_r(nullptr, "\n", &save);
   if (!line || strncmp(line, "GEN=", 4) || !parseUnsigned(line + 4, sequence))
     return false;
   memcpy(values, defaults, count * sizeof(double));
-  if (v3) {
-    uint32_t declared;
-    line = strtok_r(nullptr, "\n", &save);
-    if (!line || strncmp(line, "COUNT=", 6) ||
-        !parseUnsigned(line + 6, declared) || declared == 0 || declared > MAX_PARAMETERS)
-      return false;
-    if (needsMigration && declared != count) *needsMigration = true;
-    memset(fileSeen, 0, sizeof(fileSeen));
-    for (size_t row = 0; row < declared; ++row) {
-      line = strtok_r(nullptr, "\n", &save);
-      if (!line) return false;
-      char *equals = strchr(line, '=');
-      char *colon = strchr(line, ':');
-      if (!equals || !colon || colon >= equals || colon == line || !equals[1]) return false;
-      *equals = *colon = '\0';
-      if (strcmp(colon + 1, "float") && strcmp(colon + 1, "int")) return false;
-      for (size_t earlier = 0; earlier < row; ++earlier)
-        if (!strcmp(line, fileNames[earlier])) return false;
-      fileNames[row] = line;
-      size_t index = 0;
-      while (index < count && strcmp(line, table[index].name)) ++index;
-      if (index == count) {
-        ++parsedStats.skipped;
-        if (needsMigration) *needsMigration = true;
-        continue;
-      }
-      if (fileSeen[index]) return false;
-      fileSeen[index] = true;
-      if (needsMigration && index != row) *needsMigration = true;
-      if (strcmp(colon + 1, table[index].type()) ||
-          !parseValue(index, equals + 1, values[index])) {
-        values[index] = defaults[index];
-        ++parsedStats.skipped;
-        if (needsMigration) *needsMigration = true;
-      } else {
-        ++parsedStats.matched;
-        --parsedStats.defaultsUsed;
-      }
+  memset(fileSeen, 0, sizeof(fileSeen));
+  uint32_t declared;
+  line = strtok_r(nullptr, "\n", &save);
+  if (!line || strncmp(line,"COUNT=",6) || !parseUnsigned(line+6,declared) || declared>MAX_PARAMETERS) return false;
+  size_t sdCount=0;
+  for (size_t i=0;i<count;++i) if (table[i].storage==ParameterStorage::SD) ++sdCount;
+  if (needsMigration && declared!=sdCount) *needsMigration=true;
+  for (size_t row=0;row<declared;++row) {
+    line=strtok_r(nullptr,"\n",&save);
+    char *name,*type,*text;
+    if (!line || !ParameterRecord::split(line,name,type,text)) return false;
+    for (size_t j=0;j<row;++j) if (!strcmp(name,fileNames[j])) return false;
+    fileNames[row]=name;
+    size_t index=0;
+    while (index<count && strcmp(name,table[index].name)) ++index;
+    if (index==count) {
+      ++parsedStats.skipped;
+      if (needsMigration) *needsMigration=true;
+      continue;
     }
-    if (strtok_r(nullptr, "\n", &save) != nullptr) return false;
-    if (stats) *stats = parsedStats;
-    return true;
+    if (fileSeen[index]) return false;
+    fileSeen[index]=true;
+    if (strcmp(type,table[index].type()) || !parseValue(index,text,values[index])) {
+      fileSeen[index]=false;values[index]=defaults[index];++parsedStats.skipped;
+      if (needsMigration) *needsMigration=true;
+    } else { ++parsedStats.matched;--parsedStats.defaultsUsed; }
   }
-  for (size_t i = 0; i < count; ++i) {
-    line = strtok_r(nullptr, "\n", &save);
-    // Released registry had 27 floats plus one int; preserve those settings
-    // when upgrading to the extended table. Added fields keep compiled defaults.
-    if (!line && ((v2 && i == 28) || (legacy && i == 27))) {
-      if (stats) *stats = parsedStats;
-      return true;
-    }
-    if (!line && legacy && table[i].integer) {
-      // V1 contained the original float prefix; new integer settings use defaults.
-      for (size_t j = i; j < count; ++j) {
-        if (!table[j].integer) return false;
-        values[j] = defaults[j];
-      }
-      if (stats) *stats = parsedStats;
-      return true;
-    }
-    if (!line) return false;
-    char *equals = strchr(line, '=');
-    if (!equals) return false;
-    *equals = '\0';
-    char key[128];
-    snprintf(key, sizeof(key), legacy ? "%s" : "%s:%s", table[i].name, table[i].type());
-    if (strcmp(line, key) || !parseValue(i, equals + 1, values[i])) return false;
-    ++parsedStats.matched;
-    --parsedStats.defaultsUsed;
-  }
-  if (strtok_r(nullptr, "\n", &save) != nullptr) return false;
-  if (stats) *stats = parsedStats;
+  if (strtok_r(nullptr,"\n",&save)) return false;
+  if (stats) *stats=parsedStats;
+  return true;
+}
+
+bool sameSDValues(const double *a, const double *b) {
+  for (size_t i=0; i<count; ++i)
+    if (table[i].storage == ParameterStorage::SD && a[i] != b[i]) return false;
   return true;
 }
 
 bool writeSnapshot(const char *path, const double *values, uint32_t sequence) {
   char (&data)[FILE_SIZE] = fileData;
-  size_t used = snprintf(data, sizeof(data), "COFLY_PARAMS_V3 %s\nGEN=%lu\nCOUNT=%u\n",
-                         profile, static_cast<unsigned long>(sequence), static_cast<unsigned>(count));
+  size_t sdCount = 0; for (size_t i=0; i<count; ++i) if (table[i].storage == ParameterStorage::SD) ++sdCount;
+  size_t used = snprintf(data, sizeof(data), "COFLY_PARAMS_V5 %s\nGEN=%lu\nCOUNT=%u\n",
+                         profile, static_cast<unsigned long>(sequence), static_cast<unsigned>(sdCount));
   for (size_t i = 0; i < count; ++i) {
-    char value[VALUE_SIZE];
-    formatValue(i, values[i], value, sizeof(value));
-    int n = snprintf(data + used, sizeof(data) - used, "%s:%s=%s\n",
-                     table[i].name, table[i].type(), value);
+    if (table[i].storage != ParameterStorage::SD) continue;
+    int n = ParameterRecord::encode(table[i], values[i], data + used, sizeof(data) - used);
     if (n < 0 || static_cast<size_t>(n) >= sizeof(data) - used) return false;
     used += n;
   }
@@ -359,7 +210,7 @@ bool writeSnapshot(const char *path, const double *values, uint32_t sequence) {
   uint32_t verifiedGeneration = 0;
   if (written != used || !readParameterFile(path, verified, verifiedGeneration) ||
       verifiedGeneration != sequence ||
-      memcmp(values, verified, count * sizeof(double))) {
+      !sameSDValues(values, verified)) {
     // Remove an incomplete replacement; the other validated file remains intact.
     SD.remove(path);
     return false;
@@ -417,6 +268,76 @@ bool saveSnapshot(const double *values, bool preserveStoredFile = false) {
   return true;
 }
 
+size_t parameterIndex(uint16_t key) {
+  size_t i=0; while (i<count && table[i].id != key) ++i; return i;
+}
+
+bool retireMigratedSources(const double *values) {
+  for (size_t i=0; i<count; ++i)
+    if (table[i].storage==ParameterStorage::SD && hasEEPROMMigrationSource(table[i]))
+      return saveEEPROMParameters(table,count,values,true);
+  return true;
+}
+
+bool persist(const double *values, bool sd, bool ee) {
+  // EEPROM first: a failed SD write leaves its old file available as migration source.
+  if (ee && !saveEEPROMParameters(table, count, values)) return false;
+  if (sd && !saveSnapshot(values)) return false;
+  if (sd && !retireMigratedSources(values)) { loadState="MIGRATION_PENDING"; return false; }
+  return true;
+}
+
+void applyCommittedParameters() {
+  for (size_t i=0; i<count; ++i) {
+    if (table[i].effect == ParameterEffect::Reboot && table[i].read() != candidate[i])
+      rebootRequired = true;
+    table[i].write(candidate[i]);
+  }
+  if (rebootRequired) setFlightLocked(true);
+}
+
+bool saveOne(size_t index, double value) {
+  if (index == count || table[index].readOnly || !validValue(index, value)) return false;
+  if (!table[index].integer) value=static_cast<float>(value);
+  if ((table[index].storage == ParameterStorage::EEPROM || table[index].id >= 1000 ||
+       table[index].effect == ParameterEffect::Reboot) && !isFlightLocked()) return false;
+  for (size_t i=0; i<count; ++i) candidate[i] = table[i].read();
+  candidate[index] = value;
+  const size_t idIndex = parameterIndex(1001), countIndex = parameterIndex(1002);
+  if (idIndex < count && countIndex < count &&
+      !validAircraftConfiguration(candidate[idIndex], candidate[countIndex])) return false;
+  bool ee = table[index].storage == ParameterStorage::EEPROM;
+  bool sd = !ee;
+  if (table[index].id >= 1101 && table[index].id <= 1112) {
+    const size_t marker = parameterIndex(1113);
+    if (marker == count) return false;
+    candidate[marker] = 0;
+    ee |= table[marker].storage == ParameterStorage::EEPROM;
+    sd |= table[marker].storage == ParameterStorage::SD;
+    // Guard the marker in its own medium before a possible cross-medium update.
+    if (table[index].storage != table[marker].storage) {
+      memcpy(guarded, candidate, count*sizeof(double));
+      guarded[index] = table[index].read();
+      if (!persist(guarded, table[marker].storage == ParameterStorage::SD,
+                   table[marker].storage == ParameterStorage::EEPROM)) return false;
+      table[marker].write(0);
+      loadImuCalibration();
+    }
+  }
+  if (sd && !storageReady) return false;
+  if (!persist(candidate, sd, ee)) {
+    const size_t marker=parameterIndex(1113);
+    double durable;
+    if (marker<count && readEEPROMParameter(table[marker],durable) && durable==0) {
+      table[marker].write(0); loadImuCalibration();
+    }
+    return false;
+  }
+  applyCommittedParameters();
+  if (table[index].id >= 1101 && table[index].id <= 1112) loadImuCalibration();
+  return true;
+}
+
 void queueReply(uint32_t id, const char *format, ...) {
   int prefix = snprintf(txLine, sizeof(txLine), "@COFLY\t%lu\t",
                         static_cast<unsigned long>(id));
@@ -438,6 +359,11 @@ void error(uint32_t id, const char *code, const char *message) {
 }
 
 void handleCommand(char *line) {
+  if (!strncmp(line, "GCS ", 4) || !strncmp(line, "GCS\t", 4)) {
+    handleGroundStationCommand(line, txLine, sizeof(txLine));
+    txLength = strlen(txLine);
+    return;
+  }
   char *tokens[7];
   size_t tokenCount = 0;
   char *save;
@@ -473,13 +399,17 @@ void handleCommand(char *line) {
     if (!parseValue(index, tokens[4], value)) {
       error(id, "RANGE", "Value must be finite and within parameter bounds"); return;
     }
-    if (!storageReady) { error(id, "NO_SD", "SD card unavailable; RAM unchanged"); return; }
-    for (size_t i = 0; i < count; ++i) candidate[i] = table[i].read();
-    candidate[index] = value;
-    if (!saveSnapshot(candidate)) {
-      error(id, "SD_WRITE", "SD save/verification failed; RAM unchanged"); return;
+    if (table[index].readOnly) { error(id, "READ_ONLY", "Calibration metadata is managed by firmware"); return; }
+    if ((table[index].storage == ParameterStorage::EEPROM || table[index].id >= 1000 ||
+         table[index].effect == ParameterEffect::Reboot) && !isFlightLocked()) {
+      error(id, "LOCK_REQUIRED", "Lock aircraft before changing reboot parameters or calibration"); return;
     }
-    table[index].write(value);
+    if (table[index].storage == ParameterStorage::SD && !storageReady) {
+      error(id, "NO_SD", "SD card unavailable; RAM unchanged"); return;
+    }
+    if (!saveOne(index, value)) {
+      error(id, "SAVE_FAILED", "Configuration invalid or persistent write/verification failed"); return;
+    }
     char formatted[VALUE_SIZE];
     formatValue(index, value, formatted, sizeof(formatted));
     queueReply(id, "OK\t%s\t%s\t%s\tSAVED", table[index].name,
@@ -491,71 +421,111 @@ void handleCommand(char *line) {
 } // namespace
 
 void initializeParameterService(bool sdReady) {
+  rebootRequired = false;
   table = controlParameterTable(count);
   storageReady = sdReady && count > 0 && count <= MAX_PARAMETERS;
-  if (count > MAX_PARAMETERS) {
-    USBSerial.println("[PARAM] Registry exceeds 512 entries; service disabled");
-    return;
+  if (!count || count > MAX_PARAMETERS) { count=0; return; }
+  for (size_t i=0; i<count; ++i) {
+    if (!table[i].id || !validParameterName(table[i].name) || !validValue(i, table[i].defaultValue)) { count=0; return; }
+    for (size_t j=0; j<i; ++j)
+      if (table[j].id == table[i].id || !strcmp(table[j].name, table[i].name)) { count=0; return; }
   }
-  for (size_t i = 0; i < count; ++i) {
-    if (strlen(table[i].name) > 96) {
-      count = 0;
-      storageReady = false;
-      USBSerial.println("[PARAM] Parameter name exceeds 96 bytes; service disabled");
-      return;
+  if (parameterIndex(1001)==count || parameterIndex(1002)==count || parameterIndex(1113)==count) { count=0; return; }
+  activePath=nullptr; generation=0; rxLength=txLength=listIndex=0;
+  rxOverflow=listing=false; loadState="DEFAULTS"; loadStats={0,count,0};
+  const bool haveEEPROM = initializeEEPROMParameters();
+  for (size_t i=0; i<count; ++i) {
+    defaults[i] = table[i].defaultValue;
+    eepromLoaded[i] = readEEPROMParameter(table[i], defaults[i]);
+    if (!validValue(i, defaults[i])) { defaults[i]=table[i].defaultValue; eepromLoaded[i]=false; }
+  }
+  for (size_t i=0; i<count; ++i) table[i].write(defaults[i]);
+  snprintf(profile, sizeof(profile), "BOARD-%08lx%08lx-" PARAM_CONTROL "-" PARAM_INDI "-" PARAM_MODEL,
+           static_cast<unsigned long>(HW_OCOTP_CFG0), static_cast<unsigned long>(HW_OCOTP_CFG1));
+  bool needsMigration=false;
+  if (storageReady) {
+    if (readParameterFile(primaryPath, candidate, generation, &needsMigration, &loadStats)) activePath=primaryPath;
+    else if (readParameterFile(backupPath, candidate, generation, &needsMigration, &loadStats)) activePath=backupPath;
+    // Re-read selected file: parsing another candidate overwrites restoration flags.
+    if (activePath && !readParameterFile(activePath,candidate,generation,&needsMigration,&loadStats)) activePath=nullptr;
+  }
+  if (!activePath) { memcpy(candidate,defaults,count*sizeof(double)); memset(fileSeen,0,sizeof(fileSeen)); }
+  bool completeCalibration=true;
+  for (uint16_t key=1101; key<=1115; ++key)
+    if (parameterIndex(key)==count) completeCalibration=false;
+  for (size_t i=0; i<count; ++i) {
+    if (table[i].storage==ParameterStorage::EEPROM && eepromLoaded[i]) candidate[i]=defaults[i];
+    if (table[i].id>=1101 && table[i].id<=1115 && !eepromLoaded[i] && !fileSeen[i]) completeCalibration=false;
+    if (table[i].id>=1101 && table[i].id<=1115 && table[i].storage==ParameterStorage::SD &&
+        !fileSeen[i] && !hasEEPROMMigrationSource(table[i])) completeCalibration=false;
+  }
+  const size_t calibrationMarker=parameterIndex(1113);
+  if (completeCalibration) {
+    float offsets[12];
+    for (unsigned i=0; i<12; ++i) offsets[i]=candidate[parameterIndex(1101+i)];
+    if (candidate[parameterIndex(1115)] != imuCalibrationFingerprint(offsets,candidate[parameterIndex(1114)])) completeCalibration=false;
+  }
+  if (!completeCalibration && calibrationMarker<count) candidate[calibrationMarker]=0;
+  const size_t idIndex=parameterIndex(1001), countIndex=parameterIndex(1002);
+  if ((table[idIndex].storage==ParameterStorage::SD && !fileSeen[idIndex] && !hasEEPROMMigrationSource(table[idIndex])) ||
+      (table[countIndex].storage==ParameterStorage::SD && !fileSeen[countIndex] && !hasEEPROMMigrationSource(table[countIndex]))) candidate[idIndex]=0;
+  if (!validAircraftConfiguration(candidate[idIndex],candidate[countIndex])) {
+    candidate[idIndex]=0; candidate[countIndex]=3;
+  }
+  const bool eeSaved=saveEEPROMParameters(table,count,candidate);
+  if (!eeSaved) { candidate[idIndex]=0; candidate[parameterIndex(1113)]=0; loadState="EEPROM_ERROR"; }
+  for (size_t i=0; i<count; ++i) table[i].write(candidate[i]);
+  if (eeSaved) {
+    loadState=(activePath || haveEEPROM) ? "LOADED" : "DEFAULTS";
+    // A storage move may need SD serialization even if the old schema otherwise matches.
+    bool missingSD=false;
+    for (size_t i=0; i<count; ++i) if (table[i].storage==ParameterStorage::SD && !fileSeen[i] && eepromLoaded[i]) missingSD=true;
+    if (storageReady && (needsMigration || missingSD)) {
+      if (!saveSnapshot(candidate,true)) loadState="MIGRATION_PENDING";
+      else if (!retireMigratedSources(candidate)) loadState="MIGRATION_PENDING";
     }
   }
-  activePath = nullptr;
-  generation = 0;
-  rxLength = txLength = listIndex = 0;
-  rxOverflow = listing = false;
-  loadState = "DEFAULTS";
-  loadStats = {0, count, 0};
-  if (!storageReady) {
-    USBSerial.println("[PARAM] SD unavailable; using compiled defaults"); return;
+  activateAircraftConfiguration();
+  USBSerial.printf("[PARAM] %s: %s; EEPROM %s; aircraft %s/%d\n", profile,loadState,
+                   eepromParameterState(),aircraftName(),aircraftCount());
+}
+
+bool saveParameterValue(uint16_t id, double value) { return saveOne(parameterIndex(id),value); }
+bool parameterRebootRequired() { return rebootRequired; }
+
+bool saveImuCalibrationParameters(const float *offsets) {
+  if (!table || !count || !isFlightLocked()) return false;
+  for (size_t i=0; i<count; ++i) candidate[i]=table[i].read();
+  bool sd=false,ee=false;
+  for (unsigned j=0; j<12; ++j) {
+    const size_t i=parameterIndex(1101+j);
+    if (i==count || !validValue(i,offsets[j])) return false;
+    sd |= table[i].storage==ParameterStorage::SD; ee |= table[i].storage==ParameterStorage::EEPROM;
   }
-  double *first = candidate, *second = previous;
-  for (size_t i = 0; i < count; ++i) defaults[i] = table[i].read();
-  // Named primary always takes precedence; backup is recovery only.
-  bool needsMigration = false;
-  if (readParameterFile(primaryPath, first, generation, &needsMigration, &loadStats)) {
-    activePath = primaryPath;
-  } else if (readParameterFile(backupPath, first, generation, &needsMigration, &loadStats)) {
-    activePath = backupPath;
-  } else {
-    // Compatibility with existing alternating-slot files.
-    uint32_t sequence0 = 0, sequence1 = 0;
-    bool migration0 = false, migration1 = false;
-    MigrationStats stats0{}, stats1{};
-    const bool valid0 = readParameterFile(legacyPaths[0], first, sequence0, &migration0, &stats0);
-    const bool valid1 = readParameterFile(legacyPaths[1], second, sequence1, &migration1, &stats1);
-    const uint32_t difference = sequence1 - sequence0;
-    if (valid1 && (!valid0 || (difference != 0 && difference < 0x80000000UL))) {
-      activePath = legacyPaths[1];
-      generation = sequence1;
-      needsMigration = true;
-      loadStats = stats1;
-      memcpy(first, second, count * sizeof(double));
-    } else if (valid0) {
-      activePath = legacyPaths[0];
-      generation = sequence0;
-      needsMigration = true;
-      loadStats = stats0;
-    }
-  }
-  if (activePath) {
-    for (size_t i = 0; i < count; ++i) table[i].write(first[i]);
-    loadState = "LOADED";
-    if (needsMigration && !saveSnapshot(first, true)) loadState = "MIGRATION_PENDING";
-  } else {
-    generation = 0;
-    loadStats = {0, count, 0};
-  }
-  USBSerial.printf("[PARAM] %s: %s, %u parameters\n", profile, loadState,
-                static_cast<unsigned>(count));
+  const size_t marker=parameterIndex(1113), model=parameterIndex(1114), fingerprint=parameterIndex(1115);
+  if (marker==count || model==count || fingerprint==count || (sd && !storageReady)) return false;
+  sd |= table[marker].storage==ParameterStorage::SD || table[model].storage==ParameterStorage::SD || table[fingerprint].storage==ParameterStorage::SD;
+  ee |= table[marker].storage==ParameterStorage::EEPROM || table[model].storage==ParameterStorage::EEPROM || table[fingerprint].storage==ParameterStorage::EEPROM;
+  if (sd && !storageReady) return false;
+  candidate[marker]=0;
+  // Invalidate before writing either medium; valid is the final commit of the calibration group.
+  if (!persist(candidate,table[marker].storage==ParameterStorage::SD,table[marker].storage==ParameterStorage::EEPROM)) return false;
+  table[marker].write(0);
+  loadImuCalibration();
+  for (unsigned j=0; j<12; ++j) candidate[parameterIndex(1101+j)]=offsets[j];
+  candidate[model]=1;
+  candidate[fingerprint]=imuCalibrationFingerprint(offsets,1);
+  if (!persist(candidate,sd,ee)) return false;
+  candidate[marker]=1;
+  if (!persist(candidate,table[marker].storage==ParameterStorage::SD,table[marker].storage==ParameterStorage::EEPROM)) return false;
+  applyCommittedParameters();
+  loadImuCalibration();
+  return true;
 }
 
 void pollParameterService() {
+  pollDeviceReboot(txLength != 0);
+  if (deviceRebootPending() && !txLength) return;
   if (!table || count == 0 || count > MAX_PARAMETERS) return;
   if (!USBSerial) {
     // A reconnect starts with no stale request/response bytes.
@@ -578,8 +548,11 @@ void pollParameterService() {
       formatValue(listIndex, snapshot[listIndex], value, sizeof(value));
       formatValue(listIndex, p.minimum, low, sizeof(low));
       formatValue(listIndex, p.maximum, high, sizeof(high));
-      queueReply(listId, "VALUE\t%s\t%s\t%s\t%s\t%s\t%s\t%s", p.name,
-                 p.type(), value, low, high, p.group, p.description);
+      queueReply(listId, "VALUE\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s", p.name,
+                 p.type(), value, low, high, p.group, p.description,
+                 p.storage==ParameterStorage::EEPROM ? "EEPROM" : "SD",
+                 p.effect==ParameterEffect::Reboot ? "REBOOT" : "IMMEDIATE",
+                 p.readOnly ? "READ_ONLY" : "EDITABLE");
       ++listIndex;
     } else {
       queueReply(listId, "END\t%u", static_cast<unsigned>(count));

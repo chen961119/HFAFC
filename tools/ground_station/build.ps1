@@ -7,6 +7,7 @@ if (-not (Test-Path -LiteralPath '.venv/Scripts/python.exe')) {
 & ./.venv/Scripts/python.exe -m pip install -r requirements.txt 'pyinstaller==6.22.3'
 if ($LASTEXITCODE -ne 0) { throw 'Failed to install packaging dependencies.' }
 & ./.venv/Scripts/python.exe -m PyInstaller --noconfirm --onefile --windowed `
-    --name CoFlyParameterConsole --distpath dist --workpath build --specpath build main.py
+    --hidden-import serial.urlhandler.protocol_socket `
+    --name CoFlyGroundStation --distpath dist --workpath build --specpath build main.py
 if ($LASTEXITCODE -ne 0) { throw 'Failed to build desktop software.' }
-Write-Output (Join-Path $PSScriptRoot 'dist/CoFlyParameterConsole.exe')
+Write-Output (Join-Path $PSScriptRoot 'dist/CoFlyGroundStation.exe')

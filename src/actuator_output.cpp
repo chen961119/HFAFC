@@ -1,3 +1,4 @@
+#include "aircraft_config.h"
 #include "serial_ports.h"
 #include "actuator_output.h"
 #include "control_modes.h"
@@ -171,7 +172,7 @@ void convertControlCommandsToPWM() {
 // 准备最终物理 PWM 与子机命令；apply 阶段只应用本函数的结果。
 void prepareActuatorCommands() {
   prepareLocalElevatorCommand();
-#if defined APLANE
+if ((aircraftId() == 1)) {
   // 准备各机控制偏移；本机补偿、rev/trim 在下方共同应用。
 
   // A机
@@ -195,6 +196,7 @@ void prepareActuatorCommands() {
   Local_ele_control_us = A_ele_control_us - PWM_CENTER_US;
   Local_ele_ff_control_us = 0;
 
+  if (!aircraftIsSingle()) {
   // B机
   deviation1 = (B_ail1_control_us - PWM_CENTER_US) * 0.4;
   deviation2 = (B_ail2_control_us - PWM_CENTER_US) * 0.4;
@@ -307,7 +309,8 @@ void prepareActuatorCommands() {
                        int(G_rudd_PWM), G_pitch_sp,
                        int(G_ele_command_PWM_Manual),
                        int(G_ele_command_PWM_FF));
-#endif
+  }
+}
   // 所有飞机共用：控制偏移叠加本地补偿，再应用本机 rev/trim。
   const float elevatorAileronCompensation = localElevatorControlDeviation / 15.0f;
   ail1_PWM = PWM_CENTER_US + pwm_channel1_trim + pwm_channel1_rev *
@@ -363,10 +366,11 @@ void applyAndTransmitActuatorCommands() {
   servo3.writeMicroseconds(ele_PWM);
   servo4.writeMicroseconds(thro_PWM);
   servo5.writeMicroseconds(rudd_PWM);
-#if defined APLANE
+  if (aircraftIsSingle()) return;
+if ((aircraftId() == 1)) {
   sendPreparedChildCommands(int_is_valid);
-#else
+} else {
   sendGYROxANGLE();
   forwardReceivedChildCommands(int_is_valid);
-#endif
+}
 }

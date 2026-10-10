@@ -39,6 +39,9 @@ typedef struct {
 
 extern FC_Binary_Packet airdata;
 extern CalibrationAccGyroData calAccGyroData;
+extern int32_t imuCalibrationValidParameter, imuCalibrationModelParameter;
+extern int32_t imuCalibrationChecksumParameter;
+extern float relativeAngle_offset;
 extern SPISettings bmiSettings;
 extern int32_t Strain_value1, Strain_value2, Strain_value3, Strain_value4,
     Strain_value5;

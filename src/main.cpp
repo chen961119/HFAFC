@@ -1,3 +1,5 @@
+#include "aircraft_config.h"
+#include "flight_lock.h"
 // 飞控入口：仅编排初始化与每周期任务；各模块的状态和实现留在对应模块中。
 
 #include "actuator_output.h"
@@ -70,14 +72,22 @@ void loop() {
   increase_Clp();
   getairspeed();
   getRotateSensor1();
-  getDesState();
   ProcessButtonState();
   displayAttitude();
   Strain_read_all();
   getairdata();
-  receiveAdjacentAircraftStates();
+  if (!aircraftIsSingle()) receiveAdjacentAircraftStates();
   // telemetry(); //数传。 传输等效姿态角，相对转角，相对扭转角 10hz
 
+  if (!aircraftConfigurationValid() || parameterRebootRequired()) {
+    setFlightLocked(true);
+    commandSafeActuatorPositions();
+    pollParameterService();
+    loopRate(500);
+    return;
+  }
+
+  getDesState();
   runSelectedControlMode();
   // getpinvBplusmini();
   controlMixer();
@@ -86,7 +96,8 @@ void loop() {
   prepareActuatorCommands();
   applyAndTransmitActuatorCommands();
 
-  loggerTEAM();
+  if (aircraftIsSingle()) loggerSINGLE();
+  else loggerTEAM();
  
   getCommands(); // 接收值供下一周期控制使用，避免周期中途改变控制输入。
   failSafe();

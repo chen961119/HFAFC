@@ -19,4 +19,5 @@ void displayID(char *ss);
 void displaySD(char *ss);
 void displayfilenum();
 void displayAttitude();
+void displayRebootRequired();
 void displayFlightModeIndicators(FlightMode mode);

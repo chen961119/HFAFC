@@ -1,3 +1,4 @@
+#include "aircraft_config.h"
 #include "logger.h"
 #include "serial_ports.h"
 #include "control_state.h"
@@ -18,6 +19,7 @@ unsigned int logfreq = 50; // 记录频率Hz 注意要是2000的因数。
 unsigned long lastLogTime = 0;
 unsigned long fileCycle = 0;
 String dataString = "";
+bool headerWritten = false;
 
 // 扫描 SD 卡中 datalogNNN.txt 文件，选择下一个 1～999 的日志编号。
 void findMaxFileNumber() {
@@ -60,6 +62,7 @@ void findMaxFileNumber() {
 
 // 初始化 SD 卡，并创建带表头的新日志文件。
 void initializeLogger() {
+  headerWritten = false;
   // Some cards need time to return to their startup state after a warm reset.
   // Retry only during setup; never stall the flight loop trying to remount SD.
   for (unsigned attempt = 0; attempt < 3; ++attempt) {
@@ -82,6 +85,23 @@ void initializeLogger() {
   if (!dataFile) {
     USBSerial.println("Error opening datalog.txt");
   }
+  delay(10);
+  USBSerial.print("新建日志文件：");
+  USBSerial.println(filename_sd);
+}
+
+bool loggerSdReady() { return sdReady; }
+void flushLogger() { if (dataFile) dataFile.flush(); }
+
+unsigned int loggerFileNumber() { return fileNumber; }
+
+namespace {
+void writeLoggerHeader() {
+  if (headerWritten || !dataFile) return;
+  if (aircraftIsSingle()) {
+    dataFile.println("TimeStamp(us),q0,q1,q2,q3,ROLL_IMU(deg),PITCH_IMU(deg),YAW_IMU(deg),ROLL_des(deg),PITCH_des_local(deg),YAW_des(deg),CH1_PWM,CH2_PWM,CH3_PWM,CH4_PWM,CH5_PWM,CH6_PWM,CH7_PWM,CH8_PWM,ail1_PWM,ail2_PWM,ele_PWM,thro_PWM,rudd_PWM,Gyro_X_6050,Gyro_Y_6050,Gyro_Z_6050,invAccX_6050,AccY_6050,AccZ_6050,airspeed_A,dp,dq,dr,indi_pitch_q_des_log,indi_pitch_q_filt_log,indi_pitch_dq_des_log,indi_pitch_dq_used_log,indi_pitch_delta_e_cmd_deg_log,indi_pitch_delta_e_est_deg_log,indi_pitch_pwm_cmd_log,MT6701_raw(deg),MT6701_relative(deg),MT6701_valid");
+    dataFile.flush();
+  } else {
   dataFile.println(String(
       "TimeStamp(us),ROLL_IMU(deg),ROLL_Eq(deg),PITCH_IMU(deg),YAW_IMU(deg),"
       "ROLL_des(deg),PITCH_des_local(deg),YAW_des(deg),CH1_PWM,CH2_PWM,CH3_PWM,"
@@ -103,55 +123,71 @@ void initializeLogger() {
       "INDI_delta_e_cmd_deg,INDI_delta_e_est_deg,INDI_pwm_cmd,"
       "MT6701_raw(deg),MT6701_relative(deg),MT6701_valid"));
   dataFile.flush();
-  delay(10);
-  USBSerial.print("新建日志文件：");
-  USBSerial.println(filename_sd);
-}
-
-bool loggerSdReady() { return sdReady; }
-
-unsigned int loggerFileNumber() { return fileNumber; }
-
-// 按日志频率将单机状态写入 SD 文件，并定期刷新缓存。
-void loggerSINGLE() {
-  float invFreq = 1.0 / logfreq * 1000000.0;
-  unsigned long checker = micros();
-
-  if (checker - lastLogTime < invFreq)
-    return;
-  lastLogTime = checker;
-
-  // dataFile = SD.open(filename_sd, FILE_WRITE);
-  // 光打开不close 拔电就没了，但是每次都打开又close很浪费时间。
-  // 将本次采样的传感器与控制状态拼接为日志记录。
-  dataString =
-      String(current_time) + "," + String(q0) + "," + String(q1) + "," +
-      String(q2) + "," + String(q3) + "," + String(roll_IMU) + "," +
-      String(pitch_IMU) + "," + String(yaw_IMU) + "," + String(roll_des) + "," +
-      String(pitch_des_local) + "," + String(yaw_des) + "," +
-      String(channel_1_pwm) + "," + String(channel_2_pwm) + "," +
-      String(channel_3_pwm) + "," + String(channel_4_pwm) + "," +
-      String(channel_5_pwm) + "," + String(ail1_PWM - pwm_channel1_trim) +
-      "," + String(ail2_PWM - pwm_channel2_trim) + "," +
-      String(ele_PWM - pwm_channel3_trim) + "," + String(thro_PWM) + "," +
-      String(rudd_PWM) + "," + String(-GyroX_6050) + "," + String(GyroY_9250) +
-      "," + String(GyroZ_9250) + "," + String(Pab) + "," +
-      String(relativeAngle_ready) + "," + String(Phiab_des) + "," +
-      String(-AccX_9250) + "," + String(AccY_9250) + "," + String(AccZ_9250);
-  // USBSerial.println(dataString);
-  dataFile.println(dataString);
-
-
-  // 定期刷新 SD 写入缓存。
-
-  if (millis() - fileCycle > 2000) { // 每2秒刷新缓存
-    dataFile.flush();
-    fileCycle = millis();
   }
+  headerWritten=true;
+}
+} // namespace
+
+// 单机日志使用本机 IMU、执行器与 INDI 数据，不读取相邻机状态。
+void loggerSINGLE() {
+  if (!aircraftIsSingle() || !sdReady || !dataFile) return;
+  const unsigned long now=micros();
+  if (now-lastLogTime<1000000UL/logfreq) return;
+  lastLogTime=now;
+  writeLoggerHeader();
+  dataString=
+      String(current_time) + "," +
+      String(q0) + "," +
+      String(q1) + "," +
+      String(q2) + "," +
+      String(q3) + "," +
+      String(roll_IMU) + "," +
+      String(pitch_IMU) + "," +
+      String(yaw_IMU) + "," +
+      String(roll_des) + "," +
+      String(pitch_des_local) + "," +
+      String(yaw_des) + "," +
+      String(channel_1_pwm) + "," +
+      String(channel_2_pwm) + "," +
+      String(channel_3_pwm) + "," +
+      String(channel_4_pwm) + "," +
+      String(channel_5_pwm) + "," +
+      String(channel_6_pwm) + "," +
+      String(channel_7_pwm) + "," +
+      String(channel_8_pwm) + "," +
+      String(ail1_PWM - pwm_channel1_trim) + "," +
+      String(ail2_PWM - pwm_channel2_trim) + "," +
+      String(ele_PWM - pwm_channel3_trim) + "," +
+      String(thro_PWM) + "," +
+      String(rudd_PWM) + "," +
+      String(-GyroX_6050) + "," +
+      String(GyroY_6050) + "," +
+      String(GyroZ_6050) + "," +
+      String(-AccX_6050) + "," +
+      String(AccY_6050) + "," +
+      String(AccZ_6050) + "," +
+      String(airspeed_A) + "," +
+      String(dp) + "," +
+      String(dq) + "," +
+      String(dr) + "," +
+      String(indi_pitch_q_des_log) + "," +
+      String(indi_pitch_q_filt_log) + "," +
+      String(indi_pitch_dq_des_log) + "," +
+      String(indi_pitch_dq_used_log) + "," +
+      String(indi_pitch_delta_e_cmd_deg_log) + "," +
+      String(indi_pitch_delta_e_est_deg_log) + "," +
+      String(indi_pitch_pwm_cmd_log) + "," +
+      String(relativeAngle_raw) + "," +
+      String(relativeAngle_ready) + "," +
+      String(rotateSensorValid() ? 1 : 0);
+  dataFile.println(dataString);
+  if (millis()-fileCycle>2000) { dataFile.flush();fileCycle=millis(); }
 }
 
 // 按日志频率将编队传感器、控制和通信状态写入 SD 文件。
 void loggerTEAM() {
+  if (aircraftIsSingle() || !sdReady || !dataFile) return;
+  writeLoggerHeader();
   float invFreq = 1.0 / logfreq * 1000000.0;
   unsigned long checker = micros();
 
@@ -160,18 +196,18 @@ void loggerTEAM() {
   lastLogTime = checker;
 
   float pitch_des_local_log;
-#if defined APLANE
+if ((aircraftId() == 1)) {
 
-#if defined EVEN
+if ((aircraftCount() % 2 == 0)) {
   pitch_des_local_log = pitch_des_local + central_pitch;
-#elif defined ODD
+} else if ((aircraftCount() % 2 != 0)) {
   pitch_des_local_log = pitch_des_local;
-#endif
+}
 
-#else
+} else {
   pitch_des_local_log = pitch_des_local;
 
-#endif
+}
   A_pitch_sp = pitch_des_local_log;
   // dataFile = SD.open(filename_sd, FILE_WRITE);
   // 光打开不close 拔电就没了，但是每次都打开又close很浪费时间。
@@ -183,15 +219,6 @@ void loggerTEAM() {
   float Phidf_Mea_logger;
   float Phieg_Mea_logger;
 
-#if defined userotatesensor
-  Phiab_Mea_logger = relativeAngle_ready; // phiab是A机自己测的。
-  // Phiab_Mea=rollAB_rad_Qua;
-  Phiac_Mea_logger = phiac;
-  Phibd_Mea_logger = phibd;
-  Phice_Mea_logger = phice;
-  Phidf_Mea_logger = phidf;
-  Phieg_Mea_logger = phieg;
-#else
   Phiab_Mea_logger = phiB_raw - roll_IMU; //
   // Phiab_Mea=rollAB_rad_Qua;
   Phiac_Mea_logger = phiC_raw - roll_IMU; //
@@ -199,7 +226,6 @@ void loggerTEAM() {
   Phice_Mea_logger = phiE_raw - phiC_raw;
   Phidf_Mea_logger = phiF_raw - phiD_raw;
   Phieg_Mea_logger = phiG_raw - phiE_raw;
-#endif
 
   dataString =
       String(current_time) + "," + String(roll_IMU) + "," + String(roll_eq) +

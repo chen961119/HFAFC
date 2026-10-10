@@ -2,6 +2,10 @@
 
 // Used by USB configuration to recognize a standalone bench-powered slave.
 bool hasReceivedParentCommand();
+// Validated child-state frame received within the last second.
+bool wingStateFresh(bool left);
+// Local downstream joint, derived from the two IMU rolls; never MT6701.
+bool localWingRelativeAngle(float &angle);
 
 #include <Arduino.h>
 

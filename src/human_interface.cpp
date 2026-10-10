@@ -1,3 +1,4 @@
+#include "aircraft_config.h"
 #include "serial_ports.h"
 #include "human_interface.h"
 #include "control_state.h"
@@ -10,6 +11,7 @@
 #include "sensor_processing.h"
 #include "flight_lock.h"
 #include "actuator_output.h"
+#include "parameter_service.h"
 
 namespace {
 // 按键相关
@@ -119,21 +121,23 @@ void initializeHumanInterface() {
 
 // 按编译配置在 OLED 上显示本机 A～G 编号。
 void displayAircraftIdentity() {
-#if defined APLANE
+if ((aircraftId() == 1)) {
   displayID("A");
-#elif defined BPLANE
+} else if ((aircraftId() == 2)) {
   displayID("B");
-#elif defined CPLANE
+} else if ((aircraftId() == 3)) {
   displayID("C");
-#elif defined DPLANE
+} else if ((aircraftId() == 4)) {
   displayID("D");
-#elif defined EPLANE
+} else if ((aircraftId() == 5)) {
   displayID("E");
-#elif defined FPLANE
+} else if ((aircraftId() == 6)) {
   displayID("F");
-#elif defined GPLANE
+} else if ((aircraftId() == 7)) {
   displayID("G");
-#endif
+} else {
+  displayID("?");
+}
   if (!imuCalibrationValid()) displayAttitude();
 }
 
@@ -172,6 +176,7 @@ void setupBlink(int numBlinks, int upTime, int downTime) {
 
 // 把传入的机体编号文字绘制到 OLED 指定位置并立即刷新。
 void displayID(char *ss) {
+  if (parameterRebootRequired()) { displayRebootRequired(); return; }
   // display.clearDisplay();
   display.setTextSize(2, 2);           // 使用双倍字体。
   display.setTextColor(SSD1306_WHITE); // 白色文字。
@@ -182,6 +187,7 @@ void displayID(char *ss) {
 
 // 把 SD 卡状态文字绘制到 OLED 指定位置并立即刷新。
 void displaySD(char *ss) {
+  if (parameterRebootRequired()) { displayRebootRequired(); return; }
   // display.clearDisplay();
   display.setTextSize(1);              // 使用默认字体大小。
   display.setTextColor(SSD1306_WHITE); // 白色文字。
@@ -193,6 +199,7 @@ void displaySD(char *ss) {
 
 // 将当前日志编号写入 OLED 显示缓冲区。
 void displayfilenum() {
+  if (parameterRebootRequired()) { displayRebootRequired(); return; }
   if (!loggerSdReady()) {
     displaySD("MISS");
   }
@@ -204,7 +211,22 @@ void displayfilenum() {
 }
 
 // 按显示频率刷新相对转角及姿态角；关闭显示时直接返回。
+void displayRebootRequired() {
+  static bool shown = false;
+  if (shown) return;
+  display.clearDisplay();
+  display.setTextSize(2);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(28, 0);
+  display.print("REBOOT");
+  display.setCursor(16, 16);
+  display.print("REQUIRED");
+  display.display();
+  shown = true;
+}
+
 void displayAttitude() {
+  if (parameterRebootRequired()) { displayRebootRequired(); return; }
 
   if (!isFlightLocked()) {
     return;
@@ -218,6 +240,16 @@ void displayAttitude() {
 
   // 提醒占用左侧传感器区域，右侧日志编号与机体编号保持可见。
   display.fillRect(0, 0, 96, 32, SSD1306_BLACK);
+  if (!aircraftConfigurationValid()) {
+    display.setTextSize(1);
+    display.setTextColor(SSD1306_WHITE);
+    display.setCursor(0, 0);
+    display.print("SET ID / COUNT");
+    display.setCursor(0, 8);
+    display.print("USB CONFIG");
+    display.display();
+    return;
+  }
   if (!imuCalibrationValid()) {
     display.setTextSize(1);
     display.setTextColor(SSD1306_WHITE);
@@ -237,11 +269,12 @@ void displayAttitude() {
   display.fillRect(30, 0, 50, 8, SSD1306_BLACK);
   display.setCursor(0, 0);
   display.print("Relat: ");
-  if (rotateSensorValid()) {
-    display.print(relativeAngle_ready, 1);
+  float relativeRoll;
+  if (localWingRelativeAngle(relativeRoll)) {
+    display.print(relativeRoll, 1);
     display.print((char)247); // 度符号°
   } else {
-    display.print("ERR");
+    display.print("--");
   }
 
   // 第二行：滚转角
@@ -279,6 +312,7 @@ void displayAttitude() {
 
 // 显示启动位图，等待 1 秒后清空 OLED 缓冲区。
 void displaythumbsup() {
+  if (parameterRebootRequired()) { displayRebootRequired(); return; }
   display.drawBitmap(0,       // 居中X位置
                      0,       // 居中Y位置
                      logo,    // 位图数据

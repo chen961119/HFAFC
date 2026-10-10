@@ -1,3 +1,4 @@
+#include "aircraft_config.h"
 #include "serial_ports.h"
 #include "interaircraft_comm.h"
 #include "flight_config.h"
@@ -7,7 +8,7 @@
 float rollAB_rad_Qua, pitchAB_rad_Qua, yawAB_rad_Qua;
 
 // 通信层只引用控制和传感器状态，不持有这些状态。
-extern float relativeAngle_ready, phiac, phibd, phice, phidf, phieg;
+extern float phiac, phibd, phice, phidf, phieg;
 extern float roll_IMU, pitch_IMU, GyroX_9250;
 
 struct ReceivedCommandData {
@@ -22,6 +23,28 @@ struct ReceivedCommandData {
 };
 
 static bool parentCommandReceived = false;
+static bool leftStateReceived = false, rightStateReceived = false;
+static unsigned long leftStateTime = 0, rightStateTime = 0;
+bool wingStateFresh(bool left) {
+  return (left ? leftStateReceived : rightStateReceived) &&
+         millis() - (left ? leftStateTime : rightStateTime) <= 1000;
+}
+bool localWingRelativeAngle(float &angle) {
+  if (aircraftIsSingle()) { angle=0;return false; }
+if ((aircraftId() == 1)) {
+  angle = phiB_raw - roll_IMU; return wingStateFresh(true);
+} else if ((aircraftId() == 2)) {
+  angle = phiD_raw - roll_IMU; return wingStateFresh(true);
+} else if ((aircraftId() == 4)) {
+  angle = phiF_raw - roll_IMU; return wingStateFresh(true);
+} else if ((aircraftId() == 3)) {
+  angle = phiE_raw - roll_IMU; return wingStateFresh(false);
+} else if ((aircraftId() == 5)) {
+  angle = phiG_raw - roll_IMU; return wingStateFresh(false);
+} else {
+  angle = 0; return false;
+}
+}
 bool hasReceivedParentCommand() { return parentCommandReceived; }
 
 // 向A的左发 F<-D<-B<-A
@@ -102,6 +125,7 @@ void setRightChildCommand(unsigned int index, int aileron1, int aileron2,
 
 // 将左右两侧发送缓存分别打包下发，并携带积分控制有效标志。
 void sendPreparedChildCommands(bool intIsValid) {
+  if (aircraftIsSingle()) return;
   sendAllDataright(servoCommandsright, pitchAnglesright, elePwmCommandsRight,
                    eleFFPwmCommandsRight, lightSignalsright, intIsValid);
   sendAllDataleft(servoCommandsleft, pitchAnglesleft, elePwmCommandsLeft,
@@ -113,7 +137,7 @@ void forwardReceivedChildCommands(bool intIsValid) {
   // 启动时接收缓存全零；零油门偏移代表 1500 μs，不能作为低油门转发。
   // 首帧到达前让下游保持自身 -500 μs 的默认偏移（逻辑 PWM 1000 μs）。
   if (!parentCommandReceived) return;
-#if defined BPLANE || defined DPLANE || defined FPLANE
+if ((aircraftId() == 2) || (aircraftId() == 4) || (aircraftId() == 6)) {
   for (unsigned int i = 0; i < 4; ++i) {
     servoCommandsleft[i] = 0;
   }
@@ -129,7 +153,7 @@ void forwardReceivedChildCommands(bool intIsValid) {
   }
   sendAllDataleft(servoCommandsleft, pitchAnglesleft, elePwmCommandsLeft,
                   eleFFPwmCommandsLeft, lightSignalsleft, intIsValid);
-#elif defined CPLANE || defined EPLANE || defined GPLANE
+} else if ((aircraftId() == 3) || (aircraftId() == 5) || (aircraftId() == 7)) {
   for (unsigned int i = 0; i < 4; ++i) {
     servoCommandsright[i] = 0;
   }
@@ -145,7 +169,7 @@ void forwardReceivedChildCommands(bool intIsValid) {
   }
   sendAllDataright(servoCommandsright, pitchAnglesright, elePwmCommandsRight,
                    eleFFPwmCommandsRight, lightSignalsright, intIsValid);
-#endif
+}
 }
 
 // 以 921600 波特率启动面向上一级机体的 ParentSerial。
@@ -180,10 +204,10 @@ void sendGYROxANGLE() // 从机要做的
   uint8_t pos = 0;
   uint8_t checksum = 0;
 
-#if defined BPLANE
+if ((aircraftId() == 2)) {
   RelativeAngleAll[0] = 0.0;
-  RelativeAngleAll[1] = relativeAngle_ready;
-  RelativeAngleAll[2] = phidf;
+  RelativeAngleAll[1] = phiD_raw - roll_IMU;
+  RelativeAngleAll[2] = phiF_raw - phiD_raw;
   GYROAll[0] = GyroX;                      // 自己
   GYROAll[1] = GYRO_X_D;                   // 听来的
   GYROAll[2] = GYRO_X_F;                   // 听来的
@@ -197,10 +221,10 @@ void sendGYROxANGLE() // 从机要做的
   ELEPWM[1] = D_ele_PWM;                    // 听来的
   ELEPWM[2] = F_ele_PWM;                    // 听来的
 
-#elif defined CPLANE
-  RelativeAngleAll[0] = relativeAngle_ready;
-  RelativeAngleAll[1] = phice;
-  RelativeAngleAll[2] = phieg;
+} else if ((aircraftId() == 3)) {
+  RelativeAngleAll[0] = 0.0; // Parent computes C-A from the two rolls.
+  RelativeAngleAll[1] = phiE_raw - roll_IMU;
+  RelativeAngleAll[2] = phiG_raw - phiE_raw;
   GYROAll[0] = GyroX;                      // 自己
   GYROAll[1] = GYRO_X_E;                   // 听来的
   GYROAll[2] = GYRO_X_G;                   // 听来的
@@ -214,10 +238,10 @@ void sendGYROxANGLE() // 从机要做的
   ELEPWM[1] = E_ele_PWM;                    // 听来的
   ELEPWM[2] = G_ele_PWM;                    // 听来的
 
-#elif defined DPLANE
+} else if ((aircraftId() == 4)) {
   RelativeAngleAll[0] = 0.0;
   RelativeAngleAll[1] = 0.0;
-  RelativeAngleAll[2] = relativeAngle_ready;
+  RelativeAngleAll[2] = phiF_raw - roll_IMU;
   GYROAll[0] = 0.0;                        // 空
   GYROAll[1] = GyroX;                      // 自己的
   GYROAll[2] = GYRO_X_F;                   // 听来的
@@ -230,10 +254,10 @@ void sendGYROxANGLE() // 从机要做的
   ELEPWM[0] = 0;                           //
   ELEPWM[1] = ele_PWM; // 自己的
   ELEPWM[2] = F_ele_PWM;                    // 听来的
-#elif defined EPLANE
+} else if ((aircraftId() == 5)) {
   RelativeAngleAll[0] = 0.0;
-  RelativeAngleAll[1] = relativeAngle_ready;
-  RelativeAngleAll[2] = phieg;
+  RelativeAngleAll[1] = 0.0; // Parent computes E-C from the two rolls.
+  RelativeAngleAll[2] = phiG_raw - roll_IMU;
   GYROAll[0] = 0.0;                        // 空
   GYROAll[1] = GyroX;                      // 自己的
   GYROAll[2] = GYRO_X_G;                   // 听来的
@@ -246,10 +270,10 @@ void sendGYROxANGLE() // 从机要做的
   ELEPWM[0] = 0;                           //
   ELEPWM[1] = ele_PWM; // 自己的
   ELEPWM[2] = G_ele_PWM;                    // 听来的
-#elif defined FPLANE
+} else if ((aircraftId() == 6)) {
   RelativeAngleAll[0] = 0.0;
   RelativeAngleAll[1] = 0.0;
-  RelativeAngleAll[2] = relativeAngle_ready;
+  RelativeAngleAll[2] = 0.0; // Leaf: no downstream joint measurement.
   GYROAll[0] = 0.0;                        // 空
   GYROAll[1] = 0.0;                        // 空
   GYROAll[2] = GyroX;                      // 自己的
@@ -262,10 +286,10 @@ void sendGYROxANGLE() // 从机要做的
   ELEPWM[0] = 0;                           //
   ELEPWM[1] = 0;                           //
   ELEPWM[2] = ele_PWM; // 听来的
-#elif defined GPLANE
+} else if ((aircraftId() == 7)) {
   RelativeAngleAll[0] = 0.0;
   RelativeAngleAll[1] = 0.0;
-  RelativeAngleAll[2] = relativeAngle_ready;
+  RelativeAngleAll[2] = 0.0; // Leaf: no downstream joint measurement.
   GYROAll[0] = 0.0;                        // 空
   GYROAll[1] = 0.0;                        // 空
   GYROAll[2] = GyroX;                      // 自己的
@@ -278,7 +302,7 @@ void sendGYROxANGLE() // 从机要做的
   ELEPWM[0] = 0;                           //
   ELEPWM[1] = 0;                           //
   ELEPWM[2] = ele_PWM; // 听来的
-#endif
+}
 
   float invFreq = 1.0 / Freqsendback * 1000000.0;
   unsigned long checker2 = micros();
@@ -366,11 +390,11 @@ static void sendAllDataleft(int servoCommandsleft[12], float pitchAnglesleft[3],
                      bool lightSignalsleft[3], bool int_is_valid) {
   float invFreq2 = 1.0 / transfreq * 1000000.0;
   unsigned long checker2 = micros();
-#if defined APLANE
+if ((aircraftId() == 1)) {
   force_manual = (currentMode == MANUAL_MODE);
-#else
+} else {
   force_manual = recvData.Force_manual;
-#endif
+}
 
   if (checker2 - lasttransTime < invFreq2)
     return;
@@ -443,11 +467,11 @@ static void sendAllDataright(int servoCommandsright[12], float pitchAnglesright[
                       bool lightSignalsright[3], bool int_is_valid) {
   float invFreq3 = 1.0 / transfreq * 1000000.0;
   unsigned long checker3 = micros();
-#if defined APLANE
+if ((aircraftId() == 1)) {
   force_manual = (currentMode == MANUAL_MODE);
-#else
+} else {
   force_manual = recvData.Force_manual;
-#endif
+}
 
   if (checker3 - lasttransTime3 < invFreq3)
     return;
@@ -593,7 +617,7 @@ void receiveCommandData() {
         }
 
 // 拿出自己的
-#if defined BPLANE || defined CPLANE
+if ((aircraftId() == 2) || (aircraftId() == 3)) {
         Local_ail1_control_us = recvData.servo[0];
         Local_ail2_control_us = recvData.servo[1];
         Local_thro_control_us = recvData.servo[2];
@@ -603,7 +627,7 @@ void receiveCommandData() {
         Local_ele_ff_control_us = recvData.ele_ff_pwm[0];
         int_is_valid = recvData.int_is_valid;
         force_manual = recvData.Force_manual;
-#elif defined DPLANE || defined EPLANE
+} else if ((aircraftId() == 4) || (aircraftId() == 5)) {
         Local_ail1_control_us = recvData.servo[4];
         Local_ail2_control_us = recvData.servo[5];
         Local_thro_control_us = recvData.servo[6];
@@ -613,7 +637,7 @@ void receiveCommandData() {
         Local_ele_ff_control_us = recvData.ele_ff_pwm[1];
         int_is_valid = recvData.int_is_valid;
         force_manual = recvData.Force_manual;
-#elif defined FPLANE || defined GPLANE
+} else if ((aircraftId() == 6) || (aircraftId() == 7)) {
         Local_ail1_control_us = recvData.servo[8];
         Local_ail2_control_us = recvData.servo[9];
         Local_thro_control_us = recvData.servo[10];
@@ -623,7 +647,7 @@ void receiveCommandData() {
         Local_ele_ff_control_us = recvData.ele_ff_pwm[2];
         int_is_valid = recvData.int_is_valid;
         force_manual = recvData.Force_manual;
-#endif
+}
 
         printReceivedData();
       }
@@ -741,6 +765,8 @@ void getGYROxANGLEleft() {
         phiB_raw = phi_raw[0];
         phiD_raw = phi_raw[1];
         phiF_raw = phi_raw[2];
+        leftStateReceived = true;
+        leftStateTime = millis();
         thetaB_raw = theta_raw[0];
         thetaD_raw = theta_raw[1];
         thetaF_raw = theta_raw[2];
@@ -833,6 +859,8 @@ void getGYROxANGLEright() {
         phiC_raw = phi_raw[0];
         phiE_raw = phi_raw[1];
         phiG_raw = phi_raw[2];
+        rightStateReceived = true;
+        rightStateTime = millis();
         thetaC_raw = theta_raw[0];
         thetaE_raw = theta_raw[1];
         thetaG_raw = theta_raw[2];
@@ -846,17 +874,18 @@ void getGYROxANGLEright() {
 
 // 按本机位置读取左侧、右侧或两侧相邻机体状态。
 void receiveAdjacentAircraftStates() {
+  if (aircraftIsSingle()) return;
 // 信号传输
-#if defined APLANE // 主机
+if ((aircraftId() == 1)) {
   // 主机接收两边，但是从机接收一边
   getGYROxANGLEright(); // 得到三个p，3个转角 计算出pac pce peg
   getGYROxANGLEleft();  // 得到三个p，2个转角 计算出pab pbd pdf
 
-#elif defined BPLANE || defined DPLANE || defined FPLANE // 是左边从机
+} else if ((aircraftId() == 2) || (aircraftId() == 4) || (aircraftId() == 6)) {
   getGYROxANGLEleft(); // 得到三个p，2个转角 计算出pab pbd pdf
-#elif defined CPLANE || defined EPLANE || defined GPLANE // 是右边从机
+} else if ((aircraftId() == 3) || (aircraftId() == 5) || (aircraftId() == 7)) {
   getGYROxANGLEright(); // 得到三个p，2个转角 计算出pac pce peg
-#endif
+}
 
 
 }

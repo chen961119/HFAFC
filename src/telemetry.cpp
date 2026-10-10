@@ -31,21 +31,12 @@ void telemetry() // 主机数传
     return;
   lasttelemetryTime = checker3;
 
-#if defined userotatesensor
-  configuration_tele[0] = relativeAngle_ready; // phiab是A机自己测的。
-  configuration_tele[1] = phiac;
-  configuration_tele[2] = phibd;
-  configuration_tele[3] = phice;
-  configuration_tele[4] = phidf;
-  configuration_tele[5] = phieg;
-#else
   configuration_tele[0] = phiB_raw - roll_IMU; //
   configuration_tele[1] = phiC_raw - roll_IMU; //
   configuration_tele[2] = phiD_raw - phiB_raw;
   configuration_tele[3] = phiE_raw - phiC_raw;
   configuration_tele[4] = phiF_raw - phiD_raw;
   configuration_tele[5] = phiG_raw - phiE_raw;
-#endif
 
   attitude_tele[0] = roll_eq;
   attitude_tele[1] = pitch_IMU;

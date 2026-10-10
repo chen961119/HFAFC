@@ -1,3 +1,4 @@
+#include "aircraft_config.h"
 #include "serial_ports.h"
 #include "control_modes.h"
 #include "parameter_registry.h"
@@ -133,23 +134,7 @@ float indi_pitch_dq_used_log = 0.0f;         // INDI使用的角加速度反馈
 float indi_pitch_delta_e_cmd_deg_log = 0.0f; // INDI目标舵偏角
 float indi_pitch_delta_e_est_deg_log = 0.0f; // INDI估计的实际舵偏角
 float indi_pitch_pwm_cmd_log = 0.0f;         // INDI输出PWM
-#if defined SINGLE
-static float Kp_roll_rate = 0.045; // 滚转角速度比例增益。
-static float Ki_roll_rate = 0.010; // 滚转角速度积分增益。
-static float Kd_roll_rate =
-    0.0000; // 滚转角速度微分增益；增大前应检查输出噪声。
-static float Kp_pitch_rate = 0.09; // 俯仰角速度比例增益。
-static float Ki_pitch_rate = 0.11; // 俯仰角速度积分增益。
-static float Kd_pitch_rate =
-    0.0000; // 俯仰角速度微分增益；增大前应检查输出噪声。
-static float Kff_roll_rate = 0.15;  // 滚转角速度前馈增益。
-static float Kff_pitch_rate = 0.20; // 0.2单机
-static float Kff_yaw_rate = 0.03;
-static float Kff_FLAP_RATE = 0.09;
-static float Kp_FLAP_RATE = 0.07;
-static float Ki_FLAP_RATE = 0.12;
 
-#elif defined TEAM
 
 static float Kp_roll_rate = 0.15; // 滚转角速度比例增益。
 static float Ki_roll_rate = 0.1;  // 滚转角速度积分增益。
@@ -166,7 +151,7 @@ static float Kff_FLAP_RATE = 0.1;
 static float Kp_FLAP_RATE = 0.2;  // 0.09
 static float Ki_FLAP_RATE = 0.20; // 0.15
 
-#endif
+
 
 float roll_eq;
 
@@ -262,63 +247,81 @@ float central_pitch = 0.0f;
 const FlightParameter *controlParameterTable(size_t &count) {
   // Keep registration beside the private variables, without exporting them.
   static const FlightParameter parameters[] = {
-      {"Kp_roll_angle", &Kp_roll_angle, 0, 10, "Attitude", "Roll angle P"},
-      {"Ki_roll_angle", &Ki_roll_angle, 0, 10, "Attitude", "Roll angle I"},
-      {"Kd_roll_angle", &Kd_roll_angle, 0, 1, "Attitude", "Roll angle D (controlANGLE only)"},
-      {"Kp_pitch_angle", &Kp_pitch_angle, 0, 10, "Attitude", "Pitch angle P"},
-      {"Ki_pitch_angle", &Ki_pitch_angle, 0, 10, "Attitude", "Pitch angle I"},
-      {"Kd_pitch_angle", &Kd_pitch_angle, 0, 1, "Attitude", "Pitch angle D (controlANGLE only)"},
-      {"B_loop_roll", &B_loop_roll, 0, 1, "Attitude", "Roll outer-loop filter coefficient"},
-      {"B_loop_pitch", &B_loop_pitch, 0, 1, "Attitude", "Pitch outer-loop coefficient"},
-      {"Kp_roll_rate", &Kp_roll_rate, 0, 10, "Attitude", "Roll rate P"},
-      {"Ki_roll_rate", &Ki_roll_rate, 0, 10, "Attitude", "Roll rate I"},
-      {"Kd_roll_rate", &Kd_roll_rate, 0, 1, "Attitude", "Roll rate D"},
-      {"Kff_roll_rate", &Kff_roll_rate, 0, 10, "Attitude", "Roll rate feedforward"},
-      {"Kp_pitch_rate", &Kp_pitch_rate, 0, 10, "Attitude", "Pitch rate P"},
-      {"Ki_pitch_rate", &Ki_pitch_rate, 0, 10, "Attitude", "Pitch rate I"},
-      {"Kd_pitch_rate", &Kd_pitch_rate, 0, 1, "Attitude", "Pitch rate D"},
-      {"Kff_pitch_rate", &Kff_pitch_rate, 0, 10, "Attitude", "Pitch rate feedforward"},
-      {"Kp_yaw", &Kp_yaw, 0, 10, "Attitude", "Yaw rate P"},
-      {"Ki_yaw", &Ki_yaw, 0, 10, "Attitude", "Yaw rate I"},
-      {"Kd_yaw", &Kd_yaw, 0, 1, "Attitude", "Yaw rate D"},
-      {"Kff_yaw_rate", &Kff_yaw_rate, 0, 10, "Attitude", "Yaw rate feedforward"},
-      {"Kp_Flap", &Kp_Flap, 0, 10, "Configuration", "Relative angle P"},
-      {"Kp_FLAP_RATE", &Kp_FLAP_RATE, 0, 10, "Configuration", "Relative rate P"},
-      {"Ki_FLAP_RATE", &Ki_FLAP_RATE, 0, 10, "Configuration", "Relative rate I"},
-      {"Kff_FLAP_RATE", &Kff_FLAP_RATE, 0, 10, "Configuration", "Relative rate feedforward"},
-      {"B_loop_FLAP", &B_loop_FLAP, 0, 1, "Configuration", "Relative outer-loop filter coefficient"},
-      {"indi_pitch_q_gain", &indi_pitch_q_gain, 0.01f, 1000, "INDI", "Pitch rate error gain (1/s)"},
-      {"indi_pitch_effectiveness", &indi_pitch_effectiveness, -10000, -0.001f, "INDI", "Elevator effectiveness (deg/s^2 per deg)"},
-      {"usb_throttle_debug", &localThrottleDebugSetting(), 0, 1, "Debug", "Throttle USB log: 0 off, 1 on (10 Hz)"},
-      {"k_Clp", &k_Clp, 0, 10, "Control", "Roll damping gain"},
-      {"i_limit", &i_limit, 0, 1000, "Control", "Controller integral limit"},
-      {"maxRoll", &maxRoll, 0, 180, "Control", "Maximum roll command (deg or deg/s)"},
-      {"maxPitch", &maxPitch, 0, 180, "Control", "Maximum pitch command (deg or deg/s)"},
-      {"maxYaw", &maxYaw, 0, 720, "Control", "Maximum yaw rate command (deg/s)"},
-      {"Trim_pitch_angle", &Trim_pitch_angle, -30, 30, "Control", "Local pitch command trim (deg)"},
-      {"roll_pid_lpf_fc", &roll_pid_lpf_fc, 0.1, 200, "Control", "Roll command filter cutoff (Hz)"},
-      {"roll_pid_dot_lpf_fc", &roll_pid_dot_lpf_fc, 0.1, 200, "Control", "Roll command derivative filter cutoff (Hz)"},
-      {"pitch_des_local_rate_lpf_fc", &pitch_des_local_rate_lpf_fc, 0.1, 200, "Control", "Local pitch command rate filter cutoff (Hz)"},
-      {"indi_pitch_pwm_to_deg_k", &indi_pitch_pwm_to_deg_k, 1e-05, 1, "INDI", "Elevator PWM-to-angle slope (deg/us)"},
-      {"indi_pitch_pwm_to_deg_b", &indi_pitch_pwm_to_deg_b, -1000, 1000, "INDI", "Elevator PWM-to-angle intercept (deg)"},
-      {"indi_pitch_servo_delay_s", &indi_pitch_servo_delay_s, 0, 0.2, "INDI", "Servo pure delay (s; delay line clamps at 63 samples)"},
-      {"indi_pitch_servo_tau_s", &indi_pitch_servo_tau_s, 0, 1, "INDI", "Servo time constant (s)"},
-      {"indi_pitch_deflection_min_deg", &indi_pitch_deflection_min_deg, -90, 0, "INDI", "Minimum elevator deflection (deg)"},
-      {"indi_pitch_deflection_max_deg", &indi_pitch_deflection_max_deg, 0, 90, "INDI", "Maximum elevator deflection (deg)"},
-      {"indi_pitch_rate_limit_deg_s", &indi_pitch_rate_limit_deg_s, 1, 5000, "INDI", "Elevator deflection rate limit (deg/s)"},
-      {"indi_pitch_cmd_lpf_fc_hz", &indi_pitch_cmd_lpf_fc_hz, 0, 200, "INDI", "Elevator command cutoff (Hz; 0 disables)"},
-      {"indi_pitch_pwm_min", &indi_pitch_pwm_min, 900, 1500, "INDI", "Minimum elevator PWM (us)"},
-      {"indi_pitch_pwm_max", &indi_pitch_pwm_max, 1500, 2100, "INDI", "Maximum elevator PWM (us)"},
-      {"pwm_channel1_rev", &pwm_channel1_rev, -1, 1, "Actuator", "Output direction: -1 reverse, +1 normal; zero rejected"},
-      {"pwm_channel2_rev", &pwm_channel2_rev, -1, 1, "Actuator", "Output direction: -1 reverse, +1 normal; zero rejected"},
-      {"pwm_channel3_rev", &pwm_channel3_rev, -1, 1, "Actuator", "Output direction: -1 reverse, +1 normal; zero rejected"},
-      {"pwm_channel4_rev", &pwm_channel4_rev, -1, 1, "Actuator", "Output direction: -1 reverse, +1 normal; zero rejected"},
-      {"pwm_channel5_rev", &pwm_channel5_rev, -1, 1, "Actuator", "Output direction: -1 reverse, +1 normal; zero rejected"},
-      {"pwm_channel1_trim", &pwm_channel1_trim, -500, 500, "Actuator", "Local channel mechanical trim (us)"},
-      {"pwm_channel2_trim", &pwm_channel2_trim, -500, 500, "Actuator", "Local channel mechanical trim (us)"},
-      {"pwm_channel3_trim", &pwm_channel3_trim, -500, 500, "Actuator", "Local channel mechanical trim (us)"},
-      {"pwm_channel4_trim", &pwm_channel4_trim, -500, 500, "Actuator", "Local channel mechanical trim (us)"},
-      {"pwm_channel5_trim", &pwm_channel5_trim, -500, 500, "Actuator", "Local channel mechanical trim (us)"},
+      {1, "Kp_roll_angle", &Kp_roll_angle, 0, 10, "Attitude", "Roll angle P"},
+      {2, "Ki_roll_angle", &Ki_roll_angle, 0, 10, "Attitude", "Roll angle I"},
+      {3, "Kd_roll_angle", &Kd_roll_angle, 0, 1, "Attitude", "Roll angle D (controlANGLE only)"},
+      {4, "Kp_pitch_angle", &Kp_pitch_angle, 0, 10, "Attitude", "Pitch angle P"},
+      {5, "Ki_pitch_angle", &Ki_pitch_angle, 0, 10, "Attitude", "Pitch angle I"},
+      {6, "Kd_pitch_angle", &Kd_pitch_angle, 0, 1, "Attitude", "Pitch angle D (controlANGLE only)"},
+      {7, "B_loop_roll", &B_loop_roll, 0, 1, "Attitude", "Roll outer-loop filter coefficient"},
+      {8, "B_loop_pitch", &B_loop_pitch, 0, 1, "Attitude", "Pitch outer-loop coefficient"},
+      {9, "Kp_roll_rate", &Kp_roll_rate, 0, 10, "Attitude", "Roll rate P"},
+      {10, "Ki_roll_rate", &Ki_roll_rate, 0, 10, "Attitude", "Roll rate I"},
+      {11, "Kd_roll_rate", &Kd_roll_rate, 0, 1, "Attitude", "Roll rate D"},
+      {12, "Kff_roll_rate", &Kff_roll_rate, 0, 10, "Attitude", "Roll rate feedforward"},
+      {13, "Kp_pitch_rate", &Kp_pitch_rate, 0, 10, "Attitude", "Pitch rate P"},
+      {14, "Ki_pitch_rate", &Ki_pitch_rate, 0, 10, "Attitude", "Pitch rate I"},
+      {15, "Kd_pitch_rate", &Kd_pitch_rate, 0, 1, "Attitude", "Pitch rate D"},
+      {16, "Kff_pitch_rate", &Kff_pitch_rate, 0, 10, "Attitude", "Pitch rate feedforward"},
+      {17, "Kp_yaw", &Kp_yaw, 0, 10, "Attitude", "Yaw rate P"},
+      {18, "Ki_yaw", &Ki_yaw, 0, 10, "Attitude", "Yaw rate I"},
+      {19, "Kd_yaw", &Kd_yaw, 0, 1, "Attitude", "Yaw rate D"},
+      {20, "Kff_yaw_rate", &Kff_yaw_rate, 0, 10, "Attitude", "Yaw rate feedforward"},
+      {21, "Kp_Flap", &Kp_Flap, 0, 10, "Configuration", "Relative angle P"},
+      {22, "Kp_FLAP_RATE", &Kp_FLAP_RATE, 0, 10, "Configuration", "Relative rate P"},
+      {23, "Ki_FLAP_RATE", &Ki_FLAP_RATE, 0, 10, "Configuration", "Relative rate I"},
+      {24, "Kff_FLAP_RATE", &Kff_FLAP_RATE, 0, 10, "Configuration", "Relative rate feedforward"},
+      {25, "B_loop_FLAP", &B_loop_FLAP, 0, 1, "Configuration", "Relative outer-loop filter coefficient"},
+      {26, "indi_pitch_q_gain", &indi_pitch_q_gain, 0.01f, 1000, "INDI", "Pitch rate error gain (1/s)"},
+      {27, "indi_pitch_effectiveness", &indi_pitch_effectiveness, -10000, -0.001f, "INDI", "Elevator effectiveness (deg/s^2 per deg)"},
+      {28, "usb_throttle_debug", &localThrottleDebugSetting(), 0, 1, "Debug", "Throttle USB log: 0 off, 1 on (10 Hz)"},
+      {29, "k_Clp", &k_Clp, 0, 10, "Control", "Roll damping gain"},
+      {30, "i_limit", &i_limit, 0, 1000, "Control", "Controller integral limit"},
+      {31, "maxRoll", &maxRoll, 0, 180, "Control", "Maximum roll command (deg or deg/s)"},
+      {32, "maxPitch", &maxPitch, 0, 180, "Control", "Maximum pitch command (deg or deg/s)"},
+      {33, "maxYaw", &maxYaw, 0, 720, "Control", "Maximum yaw rate command (deg/s)"},
+      {34, "Trim_pitch_angle", &Trim_pitch_angle, -30, 30, "Control", "Local pitch command trim (deg)"},
+      {35, "roll_pid_lpf_fc", &roll_pid_lpf_fc, 0.1, 200, "Control", "Roll command filter cutoff (Hz)"},
+      {36, "roll_pid_dot_lpf_fc", &roll_pid_dot_lpf_fc, 0.1, 200, "Control", "Roll command derivative filter cutoff (Hz)"},
+      {37, "pitch_des_local_rate_lpf_fc", &pitch_des_local_rate_lpf_fc, 0.1, 200, "Control", "Local pitch command rate filter cutoff (Hz)"},
+      {38, "indi_pitch_pwm_to_deg_k", &indi_pitch_pwm_to_deg_k, 1e-05, 1, "INDI", "Elevator PWM-to-angle slope (deg/us)"},
+      {39, "indi_pitch_pwm_to_deg_b", &indi_pitch_pwm_to_deg_b, -1000, 1000, "INDI", "Elevator PWM-to-angle intercept (deg)"},
+      {40, "indi_pitch_servo_delay_s", &indi_pitch_servo_delay_s, 0, 0.2, "INDI", "Servo pure delay (s; delay line clamps at 63 samples)"},
+      {41, "indi_pitch_servo_tau_s", &indi_pitch_servo_tau_s, 0, 1, "INDI", "Servo time constant (s)"},
+      {42, "indi_pitch_deflection_min_deg", &indi_pitch_deflection_min_deg, -90, 0, "INDI", "Minimum elevator deflection (deg)"},
+      {43, "indi_pitch_deflection_max_deg", &indi_pitch_deflection_max_deg, 0, 90, "INDI", "Maximum elevator deflection (deg)"},
+      {44, "indi_pitch_rate_limit_deg_s", &indi_pitch_rate_limit_deg_s, 1, 5000, "INDI", "Elevator deflection rate limit (deg/s)"},
+      {45, "indi_pitch_cmd_lpf_fc_hz", &indi_pitch_cmd_lpf_fc_hz, 0, 200, "INDI", "Elevator command cutoff (Hz; 0 disables)"},
+      {46, "indi_pitch_pwm_min", &indi_pitch_pwm_min, 900, 1500, "INDI", "Minimum elevator PWM (us)"},
+      {47, "indi_pitch_pwm_max", &indi_pitch_pwm_max, 1500, 2100, "INDI", "Maximum elevator PWM (us)"},
+      {48, "pwm_channel1_rev", &pwm_channel1_rev, -1, 1, "Actuator", "Output direction: -1 reverse, +1 normal; zero rejected"},
+      {49, "pwm_channel2_rev", &pwm_channel2_rev, -1, 1, "Actuator", "Output direction: -1 reverse, +1 normal; zero rejected"},
+      {50, "pwm_channel3_rev", &pwm_channel3_rev, -1, 1, "Actuator", "Output direction: -1 reverse, +1 normal; zero rejected"},
+      {51, "pwm_channel4_rev", &pwm_channel4_rev, -1, 1, "Actuator", "Output direction: -1 reverse, +1 normal; zero rejected"},
+      {52, "pwm_channel5_rev", &pwm_channel5_rev, -1, 1, "Actuator", "Output direction: -1 reverse, +1 normal; zero rejected"},
+      {53, "pwm_channel1_trim", &pwm_channel1_trim, -500, 500, "Actuator", "Local channel mechanical trim (us)"},
+      {54, "pwm_channel2_trim", &pwm_channel2_trim, -500, 500, "Actuator", "Local channel mechanical trim (us)"},
+      {55, "pwm_channel3_trim", &pwm_channel3_trim, -500, 500, "Actuator", "Local channel mechanical trim (us)"},
+      {56, "pwm_channel4_trim", &pwm_channel4_trim, -500, 500, "Actuator", "Local channel mechanical trim (us)"},
+      {57, "pwm_channel5_trim", &pwm_channel5_trim, -500, 500, "Actuator", "Local channel mechanical trim (us)"},
+      {1001, "aircraft_id", &aircraftIdParameter, 0, 7, "Aircraft", "0 unconfigured; 1 A through 7 G", ParameterStorage::EEPROM, ParameterEffect::Reboot, false},
+      {1002, "aircraft_count", &aircraftCountParameter, 1, 7, "Aircraft", "Allowed counts: 1 (single), 3, 4, 5, 7", ParameterStorage::EEPROM, ParameterEffect::Reboot, false},
+      {1101, "imu_accerrorx_6050", &calAccGyroData.AccErrorX_6050, -6, 6, "IMU Calibration", "AccErrorX_6050", ParameterStorage::EEPROM, ParameterEffect::Immediate, false},
+      {1102, "imu_accerrory_6050", &calAccGyroData.AccErrorY_6050, -6, 6, "IMU Calibration", "AccErrorY_6050", ParameterStorage::EEPROM, ParameterEffect::Immediate, false},
+      {1103, "imu_accerrorz_6050", &calAccGyroData.AccErrorZ_6050, -6, 6, "IMU Calibration", "AccErrorZ_6050", ParameterStorage::EEPROM, ParameterEffect::Immediate, false},
+      {1104, "imu_gyroerrorx_6050", &calAccGyroData.GyroErrorX_6050, -2000, 2000, "IMU Calibration", "GyroErrorX_6050", ParameterStorage::EEPROM, ParameterEffect::Immediate, false},
+      {1105, "imu_gyroerrory_6050", &calAccGyroData.GyroErrorY_6050, -2000, 2000, "IMU Calibration", "GyroErrorY_6050", ParameterStorage::EEPROM, ParameterEffect::Immediate, false},
+      {1106, "imu_gyroerrorz_6050", &calAccGyroData.GyroErrorZ_6050, -2000, 2000, "IMU Calibration", "GyroErrorZ_6050", ParameterStorage::EEPROM, ParameterEffect::Immediate, false},
+      {1107, "imu_accerrorx_9250", &calAccGyroData.AccErrorX_9250, -16, 16, "IMU Calibration", "AccErrorX_9250", ParameterStorage::EEPROM, ParameterEffect::Immediate, false},
+      {1108, "imu_accerrory_9250", &calAccGyroData.AccErrorY_9250, -16, 16, "IMU Calibration", "AccErrorY_9250", ParameterStorage::EEPROM, ParameterEffect::Immediate, false},
+      {1109, "imu_accerrorz_9250", &calAccGyroData.AccErrorZ_9250, -16, 16, "IMU Calibration", "AccErrorZ_9250", ParameterStorage::EEPROM, ParameterEffect::Immediate, false},
+      {1110, "imu_gyroerrorx_9250", &calAccGyroData.GyroErrorX_9250, -2000, 2000, "IMU Calibration", "GyroErrorX_9250", ParameterStorage::EEPROM, ParameterEffect::Immediate, false},
+      {1111, "imu_gyroerrory_9250", &calAccGyroData.GyroErrorY_9250, -2000, 2000, "IMU Calibration", "GyroErrorY_9250", ParameterStorage::EEPROM, ParameterEffect::Immediate, false},
+      {1112, "imu_gyroerrorz_9250", &calAccGyroData.GyroErrorZ_9250, -2000, 2000, "IMU Calibration", "GyroErrorZ_9250", ParameterStorage::EEPROM, ParameterEffect::Immediate, false},
+      {1113, "imu_calibration_valid", &imuCalibrationValidParameter, 0, 1, "IMU Calibration", "Calibration transaction valid marker", ParameterStorage::EEPROM, ParameterEffect::Immediate, true},
+      {1114, "imu_calibration_model", &imuCalibrationModelParameter, 1, 1, "IMU Calibration", "BMI088 rotated frame schema 1", ParameterStorage::EEPROM, ParameterEffect::Immediate, true},
+      {1115, "imu_calibration_crc", &imuCalibrationChecksumParameter, INT32_MIN, INT32_MAX, "IMU Calibration", "Complete calibration fingerprint", ParameterStorage::EEPROM, ParameterEffect::Immediate, true},
+      {1201, "mt6701_zero", &relativeAngle_offset, 0, 359.99999, "Sensors", "MT6701 measurement zero (deg)", ParameterStorage::EEPROM, ParameterEffect::Immediate, false},
   };
   count = sizeof(parameters) / sizeof(parameters[0]);
   return parameters;
@@ -337,7 +340,7 @@ void controlMixer() {
 
   // 混控在这里
 
-#if defined SINGLE
+if (aircraftIsSingle()) {
   // 自己飞
   A_ail1_scaled = roll_PID;
   A_ail2_scaled = -roll_PID;
@@ -345,7 +348,7 @@ void controlMixer() {
   A_thro_scaled = thro_des;
   A_rudd_scaled = yaw_PID;
 
-#elif defined TEAM
+} else {
 
 /*
 //2机一起飞 BA
@@ -411,7 +414,7 @@ central_pitch=-45.0*coeroll*roll_PID;
 // USBSerial.println(A_ail1_scaled);
 
 // 3机一起飞 BAC
-#if defined THREEPLANE
+if ((aircraftCount() == 3)) {
 
   float coeab, coeac, coeroll;
   if (abs(error_Phiab) > 20) {
@@ -521,7 +524,7 @@ central_pitch=-45.0*coeroll*roll_PID;
     C_ele_control_ff_us = 10.0 * 20.0 * roll_PID_lpf + 10.0 * roll_PID_dot_lpf;
   }
 
-#elif defined FOURPLANE
+} else if ((aircraftCount() == 4)) {
 
   // 4机一起飞 DBAC
   float coeab, coeac, coebd,
@@ -672,7 +675,7 @@ central_pitch=-45.0*coeroll*roll_PID;
                  20.0 * Phiac_PID + 20.0 * Phibd_PID;
   }
 
-#elif defined FIVEPLANE
+} else if ((aircraftCount() == 5)) {
 
   // 5机一起飞DBACE
   float coeab, coeac, coebd, coece,
@@ -857,7 +860,7 @@ central_pitch=-45.0*coeroll*roll_PID;
    }
      */
 
-#elif defined SEVENPLANE
+} else if ((aircraftCount() == 7)) {
 
   // 7机一起飞 FDBACEG
   float coeab, coeac, coebd, coece, coedf, coeeg,
@@ -985,9 +988,9 @@ central_pitch=-45.0*coeroll*roll_PID;
   G_rudd_scaled = yaw_PID;
   G_pitch_sp = pitch_des_local - 0.5 * coeroll * roll_des;
 
-#endif
+}
 
-#endif
+}
 
   // s6_command_scaled = 0;
   // s7_command_scaled = 0;
@@ -1006,7 +1009,7 @@ void getDesState() { // 调整了通道顺序
   GyroZ = GyroZ_9250;
 #endif
 
-#if defined APLANE // 是主机
+if ((aircraftId() == 1)) {
   {
     thro_des_RAW = (channel_3_pwm - 1100.0) / 1000.0; // 范围 0～1。
     roll_des_RAW = (channel_1_pwm - PWM_CENTER_US) / 500.0;  // 范围 -1～1。
@@ -1070,11 +1073,7 @@ void getDesState() { // 调整了通道顺序
 
     pitch_des_local += Trim_pitch_angle;
 
-#if defined TEAM
 
-    // pitch_des_local=pitch_des-0.1*roll_des;//2机
-    pitch_des_local = pitch_des_local; // 3机
-#endif
 
     // 1600以上是手动  1400-1600是速率 1400以下是增稳
     if (channel_5_pwm > 1600) {
@@ -1091,7 +1090,7 @@ void getDesState() { // 调整了通道顺序
     }
     lastMode = currentMode;
   }
-#else // 是从机
+} else {
   {
     receiveCommandData();
     if (int_is_valid) {
@@ -1115,7 +1114,7 @@ void getDesState() { // 调整了通道顺序
     // USBSerial.println(pitch_des_local);
     yaw_des = 0;
   }
-#endif
+}
 }
 
 // 单环控制：滚转、俯仰使用角度误差，偏航使用陀螺仪角速度误差。
@@ -1258,19 +1257,12 @@ void controlANGLE2() {
   // 外环：角度误差生成角速度期望。
   float roll_des_ol, pitch_des_ol;
 // 滚转通道。
-#if defined SINGLE
+if (aircraftIsSingle()) {
   roll_eq = roll_IMU;
-#else
+} else {
 
   float phiA, phiB, phiC, phiD, phiE, phiF, phiG;
 
-#if defined userotatesensor
-  phiA = roll_IMU / 57.3;
-  phiB = (roll_IMU + relativeAngle_ready) / 57.3;
-  phiC = (roll_IMU + phiac) / 57.3;
-  phiD = (roll_IMU + relativeAngle_ready + phibd) / 57.3;
-  phiE = (roll_IMU + phiac + phice) / 57.3;
-#else
   // 直接测量的方式
   phiA = roll_IMU / 57.3;
   phiB = phiB_raw / 57.3;
@@ -1280,29 +1272,28 @@ void controlANGLE2() {
   phiF = phiF_raw / 57.3;
   phiG = phiG_raw / 57.3;
 
-#endif
 
 // roll_eq=(roll_IMU+roll_IMU+relativeAngle_ready)/2.0; //2机等效姿态
-#if defined THREEPLANE
+if ((aircraftCount() == 3)) {
   roll_eq = atan((sin(phiA) + sin(phiB) + sin(phiC)) /
                  (cos(phiA) + cos(phiB) + cos(phiC))) *
             57.3; // 3机等效姿态
-#elif defined FOURPLANE
+} else if ((aircraftCount() == 4)) {
   roll_eq = atan((sin(phiA) + sin(phiB) + sin(phiC) + sin(phiD)) /
                  (cos(phiA) + cos(phiB) + cos(phiC) + cos(phiD))) *
             57.3; // 4机等效姿态
-#elif defined FIVEPLANE
+} else if ((aircraftCount() == 5)) {
   roll_eq = atan((sin(phiA) + sin(phiB) + sin(phiC) + sin(phiD) + sin(phiE)) /
                  (cos(phiA) + cos(phiB) + cos(phiC) + cos(phiD) + cos(phiE))) *
             57.3; // 5机等效姿态
-#elif defined SEVENPLANE
+} else if ((aircraftCount() == 7)) {
   roll_eq = atan((sin(phiA) + sin(phiB) + sin(phiC) + sin(phiD) + sin(phiE) +
                   sin(phiF) + sin(phiG)) /
                  (cos(phiA) + cos(phiB) + cos(phiC) + cos(phiD) + cos(phiE) +
                   cos(phiF) + cos(phiG))) *
             57.3; // 7机等效姿态
-#endif
-#endif
+}
+}
 
   error_roll = roll_des - roll_eq;
   integral_roll_ol = integral_roll_prev_ol + error_roll * dt; // I
@@ -1324,17 +1315,17 @@ void controlANGLE2() {
   // 俯仰通道。
   // USBSerial.println(pitch_des_local);
 
-#if defined APLANE
+if ((aircraftId() == 1)) {
 
-#if defined EVEN
+if ((aircraftCount() % 2 == 0)) {
   error_pitch = pitch_des_local + central_pitch - pitch_IMU;
-#elif defined ODD
+} else if ((aircraftCount() % 2 != 0)) {
   error_pitch = pitch_des_local - pitch_IMU;
-#endif
+}
 
-#else
+} else {
   error_pitch = pitch_des_local - pitch_IMU;
-#endif
+}
 
   // USBSerial.println(error_pitch);
   // error_pitch = pitch_des_local - pitch_IMU;
@@ -1369,22 +1360,22 @@ void controlANGLE2() {
   // 内环：角速度误差 PID。
   // 滚转通道。
   float Rollrate;
-#if defined SINGLE
+if (aircraftIsSingle()) {
   Rollrate = GyroX;
-#else
+} else {
 // 历史方案：可将相邻机体角速度用于等效滚转角速度估计。
-#if defined THREEPLANE
+if ((aircraftCount() == 3)) {
   Rollrate = (GYRO_X_B + GYRO_X_C + GyroX) / 3.0;
-#elif defined FIVEPLANE
+} else if ((aircraftCount() == 4)) {
   Rollrate = (GYRO_X_B + GYRO_X_C + GYRO_X_D + GyroX) / 4.0;
-#elif defined FIVEPLANE
+} else if ((aircraftCount() == 5)) {
   Rollrate = (GYRO_X_B + GYRO_X_C + GYRO_X_D + GYRO_X_E + GyroX) / 5.0;
-#elif defined SEVENPLANE
+} else if ((aircraftCount() == 7)) {
   Rollrate = (GYRO_X_B + GYRO_X_C + GYRO_X_D + GYRO_X_E + GYRO_X_F + GYRO_X_G +
               GyroX) /
              7.0; // 7机等效滚转角速度
-#endif
-#endif
+}
+}
   // USBSerial.println(Rollrate);
 
   error_roll = roll_des_ol - Rollrate;
@@ -1867,13 +1858,6 @@ void controlFlapMotion() {
   GyroX = Gyro_X_EXT;
 #endif
 
-#if defined userotatesensor
-  Phiab_Mea = relativeAngle_ready; // phiab是A机自己测的。
-  // Phiab_Mea=rollAB_rad_Qua;
-  Phiac_Mea = phiac;
-  Phibd_Mea = phibd;
-  Phice_Mea = phice;
-#else
   Phiab_Mea = phiB_raw - roll_IMU; //
   // Phiab_Mea=rollAB_rad_Qua;
   Phiac_Mea = phiC_raw - roll_IMU; //
@@ -1881,7 +1865,6 @@ void controlFlapMotion() {
   Phice_Mea = phiE_raw - phiC_raw;
   Phidf_Mea = phiF_raw - phiD_raw;
   Phieg_Mea = phiG_raw - phiE_raw;
-#endif
 
   Pab = GYRO_X_B - (GyroX);
   Pac = GYRO_X_C - (GyroX);
@@ -2066,7 +2049,7 @@ void runSelectedControlMode() {
     force_manual = false;
     controlANGLE2(); // 使用串级角度控制器；内环角速度增益需先完成整定。
     displayFlightModeIndicators(currentMode);
-    controlFlapMotion();
+    if (!aircraftIsSingle()) controlFlapMotion();
   } else if (currentMode == STABLIZE_MODE_NO_I) // 增稳
   {
     int_is_valid = false;
@@ -2074,7 +2057,7 @@ void runSelectedControlMode() {
     i_valid = 0.0;
     controlANGLE2();        // 使用无积分的角度增稳模式。
     displayFlightModeIndicators(currentMode);
-    controlFlapMotion();
+    if (!aircraftIsSingle()) controlFlapMotion();
   } else if (currentMode == MANUAL_MODE) {
     force_manual = true;
     displayFlightModeIndicators(currentMode);
