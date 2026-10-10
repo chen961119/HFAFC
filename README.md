@@ -40,6 +40,7 @@ pio device monitor -e teensy41
 
 ## 配套工具
 
+- [飞行数据浏览器](tools/flight_data_browser/README.md)：读取 SD 日志，多文件对比、子图、飞行区段、FFT 和 CSV 导出。
 - [USB 参数配置与串口助手](tools/parameter_console/README.md)：读取、修改与保存本机参数，支持 SD 恢复和串口日志。
 - [Teensy 板上断点调试](tools/teensy_debug/README.md)：通过 `teensy41_debug` 环境与 VS Code 调试板上固件。
 
@@ -51,6 +52,7 @@ CoFly-Autopilot/
 ├── include/                  # 配置、模块接口与共享类型
 ├── lib/                      # 随仓库保存的驱动和依赖库
 ├── tools/
+│   ├── flight_data_browser/  # Python 飞行日志读取与分析
 │   ├── parameter_console/    # USB 参数配置软件与测试
 │   └── teensy_debug/         # 板上调试脚本与配置模板
 ├── docs/

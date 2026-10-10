@@ -38,7 +38,7 @@ void setup() {
   loadRotateSensorOffset();
   initializeRotateSensor();
   loadImuCalibration();
-  prepareActuatorPower();
+  // prepareActuatorPower();
   displayAircraftIdentity();
   attachActuators();
 

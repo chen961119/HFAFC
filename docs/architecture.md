@@ -48,7 +48,7 @@ CoFly Autopilot（Collaborative Distributed Autopilot，分布式协同飞控系
 
 遥控命令在周期末更新，供下一周期使用。500 Hz 是目标频率；OLED、SD、参数保存等同步操作的实际耗时仍需硬件测量，不能仅由 `loopRate(500)` 推断性能。
 
-输出路径依次为 `controlMixer()`、`convertControlCommandsToPWM()`、`prepareActuatorCommands()`、`applyAndTransmitActuatorCommands()`。上级向从机发送有符号控制偏移，由本机应用中位、rev、trim 和补偿；最终物理 PWM 在写入前统一经过锁定与 900～2100 μs 限幅。具体锁定油门行为见 [固件指南](firmware-guide.md#执行器锁定与限幅)。
+输出路径依次为 `controlMixer()`、`convertControlCommandsToPWM()`、`prepareActuatorCommands()`、`applyAndTransmitActuatorCommands()`。上级向从机发送有符号控制偏移，由本机应用中位、rev、trim 和补偿；锁定时直接输出 `1500 + trim`，解锁后才应用各通道独立的软件限幅（默认各路 1000～2000 μs）；非有限控制结果回退到锁定位置。Servo 驱动范围独立保持 1000～2000 μs。具体锁定油门行为见 [固件指南](firmware-guide.md#执行器锁定与限幅)。
 
 ## 兼容性与维护入口
 

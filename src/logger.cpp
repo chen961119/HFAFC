@@ -86,15 +86,15 @@ void initializeLogger() {
       "TimeStamp(us),ROLL_IMU(deg),ROLL_Eq(deg),PITCH_IMU(deg),YAW_IMU(deg),"
       "ROLL_des(deg),PITCH_des_local(deg),YAW_des(deg),CH1_PWM,CH2_PWM,CH3_PWM,"
       "CH4_PWM,CH5_PWM,CH6_PWM,CH7_PWM,CH8_PWM,ail1_PWM,ail2_PWM,ele_PWM,"
-      "thro_PWM,rudd_PWM,Bail1_control_us,Bail2_control_us,Bthro_control_us,Brudd_control_us,Cail1_control_us,"
-      "Cail2_control_us,Cthro_control_us,Crudd_control_us,Dail1_control_us,Dail2_control_us,Dthro_control_us,Drudd_control_us,"
-      "Eail1_control_us,Eail2_control_us,Ethro_control_us,Erudd_control_us,Fail1_control_us,Fail2_control_us,Fthro_control_us,"
-      "Frudd_control_us,Gail1_control_us,Gail2_control_us,Gthro_control_us,Grudd_control_us,Pab(deg),Pac(deg),Pbd("
+      "thro_PWM,rudd_PWM,B_ail1_control_us,B_ail2_control_us,B_thro_control_us,B_rudd_control_us,C_ail1_control_us,"
+      "C_ail2_control_us,C_thro_control_us,C_rudd_control_us,D_ail1_control_us,D_ail2_control_us,D_thro_control_us,D_rudd_control_us,"
+      "E_ail1_control_us,E_ail2_control_us,E_thro_control_us,E_rudd_control_us,F_ail1_control_us,F_ail2_control_us,F_thro_control_us,"
+      "F_rudd_control_us,G_ail1_control_us,G_ail2_control_us,G_thro_control_us,G_rudd_control_us,Pab(deg),Pac(deg),Pbd("
       "deg),Pce(deg),Pdf(deg),Peg(deg),Phiab_Mea(deg),Phiab_des(deg),"
       "phiac(deg),phibd(deg),phice(deg),phidf(deg),phieg(deg),Apitchsp,"
       "Bpitchsp,Cpitchsp,Dpitchsp,Epitchsp,Fpitchsp,Gpitchsp,Bpitch_raw,Cpitch_"
-      "raw,Dpitch_raw,Epitch_raw,Fpitch_raw,Gpitch_raw,Bele_pwm,Cele_pwm,Dele_"
-      "pwm,Eele_pwm,Fele_pwm,Gele_pwm,rollAB_rad_Qua,roll_IMU_EXT,pitch_IMU_"
+      "raw,Dpitch_raw,Epitch_raw,Fpitch_raw,Gpitch_raw,B_ele_pwm,C_ele_pwm,D_ele_"
+      "pwm,E_ele_pwm,F_ele_pwm,G_ele_pwm,rollAB_rad_Qua,roll_IMU_EXT,pitch_IMU_"
       "EXT,yaw_IMU_EXT,invAccX_6050,AccY_6050,AccZ_6050,Gyro_X_6050,Gyro_Y_"
       "6050,Gyro_Z_6050,Gyro_X_EXT,Gyro_Y_EXT,Gyro_Z_EXT,phiab_PID,phiac_PID,"
       "phibd_PID,phice_PID,phidf_PID,phieg_PID,roll_PID,pitch_PID,airspeed_A,"
@@ -212,16 +212,16 @@ void loggerTEAM() {
       String(ail1_PWM - pwm_channel1_trim) + "," +
       String(ail2_PWM - pwm_channel2_trim) + "," +
       String(ele_PWM - pwm_channel3_trim) + "," + String(thro_PWM) + "," +
-      String(rudd_PWM) + "," + String(Bail1_PWM) + "," + String(Bail2_PWM) +
-      "," + String(Bthro_PWM) + "," + String(Brudd_PWM) + "," +
-      String(Cail1_PWM) + "," + String(Cail2_PWM) + "," + String(Cthro_PWM) +
-      "," + String(Crudd_PWM) + "," + String(Dail1_PWM) + "," +
-      String(Dail2_PWM) + "," + String(Dthro_PWM) + "," + String(Drudd_PWM) +
-      "," + String(Eail1_PWM) + "," + String(Eail2_PWM) + "," +
-      String(Ethro_PWM) + "," + String(Erudd_PWM) + "," + String(Fail1_PWM) +
-      "," + String(Fail2_PWM) + "," + String(Fthro_PWM) + "," +
-      String(Frudd_PWM) + "," + String(Gail1_PWM) + "," + String(Gail2_PWM) +
-      "," + String(Gthro_PWM) + "," + String(Grudd_PWM) + "," + String(Pab) +
+      String(rudd_PWM) + "," + String(B_ail1_PWM) + "," + String(B_ail2_PWM) +
+      "," + String(B_thro_PWM) + "," + String(B_rudd_PWM) + "," +
+      String(C_ail1_PWM) + "," + String(C_ail2_PWM) + "," + String(C_thro_PWM) +
+      "," + String(C_rudd_PWM) + "," + String(D_ail1_PWM) + "," +
+      String(D_ail2_PWM) + "," + String(D_thro_PWM) + "," + String(D_rudd_PWM) +
+      "," + String(E_ail1_PWM) + "," + String(E_ail2_PWM) + "," +
+      String(E_thro_PWM) + "," + String(E_rudd_PWM) + "," + String(F_ail1_PWM) +
+      "," + String(F_ail2_PWM) + "," + String(F_thro_PWM) + "," +
+      String(F_rudd_PWM) + "," + String(G_ail1_PWM) + "," + String(G_ail2_PWM) +
+      "," + String(G_thro_PWM) + "," + String(G_rudd_PWM) + "," + String(Pab) +
       "," + String(Pac) + "," + String(Pbd) + "," + String(Pce) + "," +
       String(Pdf) + "," + String(Peg) + "," + String(Phiab_Mea_logger) + "," +
       String(Phiab_des) + "," + String(Phiac_Mea_logger) + "," +
@@ -232,12 +232,12 @@ void loggerTEAM() {
       String(F_pitch_sp) + "," + String(G_pitch_sp) + "," + String(thetaB_raw) +
       "," + String(thetaC_raw) + "," + String(thetaD_raw) + "," +
       String(thetaE_raw) + "," + String(thetaF_raw) + "," + String(thetaG_raw) +
-      "," + String(Bele_PWM) + "," +
-      String(Cele_PWM) + "," +
-      String(Dele_PWM) + "," +
-      String(Eele_PWM) + "," +
-      String(Fele_PWM) + "," +
-      String(Gele_PWM) + "," + String(rollAB_rad_Qua) +
+      "," + String(B_ele_PWM) + "," +
+      String(C_ele_PWM) + "," +
+      String(D_ele_PWM) + "," +
+      String(E_ele_PWM) + "," +
+      String(F_ele_PWM) + "," +
+      String(G_ele_PWM) + "," + String(rollAB_rad_Qua) +
       "," + String(roll_IMU_EXT) + "," + String(pitch_IMU_EXT) + "," +
       String(yaw_IMU_EXT) + "," + String(-AccX_6050) + "," + String(AccY_6050) +
       "," + String(AccZ_6050) + "," + String(-GyroX_6050) + "," +

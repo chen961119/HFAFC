@@ -1778,7 +1778,7 @@ GFXcanvas1::GFXcanvas1(uint16_t w, uint16_t h, bool allocate_buffer)
 
 /**************************************************************************/
 /*!
-   @brief    Delete the canvas, free memory
+   @brief    D_elete the canvas, free memory
 */
 /**************************************************************************/
 GFXcanvas1::~GFXcanvas1(void) {
@@ -2139,7 +2139,7 @@ GFXcanvas8::GFXcanvas8(uint16_t w, uint16_t h, bool allocate_buffer)
 
 /**************************************************************************/
 /*!
-   @brief    Delete the canvas, free memory
+   @brief    D_elete the canvas, free memory
 */
 /**************************************************************************/
 GFXcanvas8::~GFXcanvas8(void) {
@@ -2416,7 +2416,7 @@ GFXcanvas16::GFXcanvas16(uint16_t w, uint16_t h, bool allocate_buffer)
 
 /**************************************************************************/
 /*!
-   @brief    Delete the canvas, free memory
+   @brief    D_elete the canvas, free memory
 */
 /**************************************************************************/
 GFXcanvas16::~GFXcanvas16(void) {

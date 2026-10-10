@@ -73,12 +73,12 @@ float A_pitch_sp, B_pitch_sp, C_pitch_sp, D_pitch_sp, E_pitch_sp, F_pitch_sp, G_
 float B_ele_control_ff_us, C_ele_control_ff_us, D_ele_control_ff_us,
     E_ele_control_ff_us, F_ele_control_ff_us, G_ele_control_ff_us;
 
-static float Local_pitch_des_last = 8; // 期望当地俯仰角
-static int Local_rudd_PWM_last = PWM_CENTER_US;
-static int Local_thro_PWM_last = 1111;
-static int Local_ail2_PWM_last = PWM_CENTER_US;
-static int Local_ail1_PWM_last = PWM_CENTER_US;
-static float relativeAngle_ready_prev;
+// static float Local_pitch_des_last = 8; // 期望当地俯仰角
+// static int Local_rudd_PWM_last = PWM_CENTER_US;
+// static int Local_thro_PWM_last = 1100;
+// static int Local_ail2_PWM_last = PWM_CENTER_US;
+// static int Local_ail1_PWM_last = PWM_CENTER_US;
+// static float relativeAngle_ready_prev;
 
 
 // 控制器增益与限幅参数；修改后需重新验证闭环响应。
@@ -245,14 +245,14 @@ static float m1_command_scaled, m2_command_scaled, m3_command_scaled,
     m4_command_scaled, m5_command_scaled, m6_command_scaled;
 int m1_command_PWM, m2_command_PWM, m3_command_PWM, m4_command_PWM,
     m5_command_PWM, m6_command_PWM;
-float Aail1_scaled, Aail2_scaled, Aele_scaled, Athro_scaled, Arudd_scaled,
-    s6_command_scaled, s7_command_scaled;
-float Bail1_scaled, Bail2_scaled, Bele_scaled, Bthro_scaled, Brudd_scaled;
-float Cail1_scaled, Cail2_scaled, Cele_scaled, Cthro_scaled, Crudd_scaled;
-float Dail1_scaled, Dail2_scaled, Dele_scaled, Dthro_scaled, Drudd_scaled;
-float Eail1_scaled, Eail2_scaled, Eele_scaled, Ethro_scaled, Erudd_scaled;
-float Fail1_scaled, Fail2_scaled, Fele_scaled, Fthro_scaled, Frudd_scaled;
-float Gail1_scaled, Gail2_scaled, Gele_scaled, Gthro_scaled, Grudd_scaled;
+float A_ail1_scaled, A_ail2_scaled, A_ele_scaled, A_thro_scaled, A_rudd_scaled;
+// float s6_command_scaled, s7_command_scaled;
+float B_ail1_scaled, B_ail2_scaled, B_ele_scaled, B_thro_scaled, B_rudd_scaled;
+float C_ail1_scaled, C_ail2_scaled, C_ele_scaled, C_thro_scaled, C_rudd_scaled;
+float D_ail1_scaled, D_ail2_scaled, D_ele_scaled, D_thro_scaled, D_rudd_scaled;
+float E_ail1_scaled, E_ail2_scaled, E_ele_scaled, E_thro_scaled, E_rudd_scaled;
+float F_ail1_scaled, F_ail2_scaled, F_ele_scaled, F_thro_scaled, F_rudd_scaled;
+float G_ail1_scaled, G_ail2_scaled, G_ele_scaled, G_thro_scaled, G_rudd_scaled;
 
 int s6_command_PWM, s7_command_PWM;
 
@@ -339,11 +339,11 @@ void controlMixer() {
 
 #if defined SINGLE
   // 自己飞
-  Aail1_scaled = roll_PID;
-  Aail2_scaled = -roll_PID;
-  Aele_scaled = pitch_PID;
-  Athro_scaled = thro_des;
-  Arudd_scaled = yaw_PID;
+  A_ail1_scaled = roll_PID;
+  A_ail2_scaled = -roll_PID;
+  A_ele_scaled = pitch_PID;
+  A_thro_scaled = thro_des;
+  A_rudd_scaled = yaw_PID;
 
 #elif defined TEAM
 
@@ -354,61 +354,61 @@ void controlMixer() {
 float coeroll=1.0;
 if (channel_6_pwm>1600)
 {
-Bail1_scaled = 0.81*roll_PID+0.5*Phiab_PID;
-Bail2_scaled = 0.41*roll_PID-0.5*Phiab_PID;
-Bthro_scaled = thro_des-0.8*yaw_PID;
-Brudd_scaled = yaw_PID;
+B_ail1_scaled = 0.81*roll_PID+0.5*Phiab_PID;
+B_ail2_scaled = 0.41*roll_PID-0.5*Phiab_PID;
+B_thro_scaled = thro_des-0.8*yaw_PID;
+B_rudd_scaled = yaw_PID;
 B_pitch_sp=pitch_des_local+coeroll*0.07*roll_des;//2机、3机
 
 
-Aail1_scaled = -0.41*roll_PID-0.5*Phiab_PID;
-Aail2_scaled = -0.81*roll_PID+0.5*Phiab_PID;
-Aele_scaled = pitch_PID;
-Athro_scaled = thro_des+0.8*yaw_PID;
-Arudd_scaled = yaw_PID;
+A_ail1_scaled = -0.41*roll_PID-0.5*Phiab_PID;
+A_ail2_scaled = -0.81*roll_PID+0.5*Phiab_PID;
+A_ele_scaled = pitch_PID;
+A_thro_scaled = thro_des+0.8*yaw_PID;
+A_rudd_scaled = yaw_PID;
 central_pitch=-0.07*coeroll*roll_des;
 }
 else if(channel_6_pwm<1600&&channel_6_pwm>1400)
 {
 
 //策略2
-Bail1_scaled = 0.5*0.81*roll_PID+0.5*Phiab_PID;
-Bail2_scaled = 0.5*0.41*roll_PID-0.5*Phiab_PID;
-Bthro_scaled = thro_des-0.8*yaw_PID;
-Brudd_scaled = yaw_PID;
+B_ail1_scaled = 0.5*0.81*roll_PID+0.5*Phiab_PID;
+B_ail2_scaled = 0.5*0.41*roll_PID-0.5*Phiab_PID;
+B_thro_scaled = thro_des-0.8*yaw_PID;
+B_rudd_scaled = yaw_PID;
 B_pitch_sp=pitch_des_local+12.0*roll_PID;//2机、3机
 
 
-Aail1_scaled = 0.5*-0.41*roll_PID-0.5*Phiab_PID;
-Aail2_scaled = 0.5*-0.81*roll_PID+0.5*Phiab_PID;
-Aele_scaled = pitch_PID;
-Athro_scaled = thro_des+0.8*yaw_PID;
-Arudd_scaled = yaw_PID;
+A_ail1_scaled = 0.5*-0.41*roll_PID-0.5*Phiab_PID;
+A_ail2_scaled = 0.5*-0.81*roll_PID+0.5*Phiab_PID;
+A_ele_scaled = pitch_PID;
+A_thro_scaled = thro_des+0.8*yaw_PID;
+A_rudd_scaled = yaw_PID;
 central_pitch=-12.0*coeroll*roll_PID;
 
 }
 else
 {
 //策略3
-Bail1_scaled = 0.1*0.81*roll_PID+0.5*Phiab_PID;
-Bail2_scaled = 0.1*0.41*roll_PID-0.5*Phiab_PID;
-Bthro_scaled = thro_des+keeppositive(-1.2*yaw_PID)+keeppositive(0.4*roll_PID);
-Brudd_scaled = yaw_PID;
+B_ail1_scaled = 0.1*0.81*roll_PID+0.5*Phiab_PID;
+B_ail2_scaled = 0.1*0.41*roll_PID-0.5*Phiab_PID;
+B_thro_scaled = thro_des+keeppositive(-1.2*yaw_PID)+keeppositive(0.4*roll_PID);
+B_rudd_scaled = yaw_PID;
 B_pitch_sp=pitch_des_local+45.0*coeroll*roll_PID;//2机、3机
 
 
-Aail1_scaled = 0.1*-0.41*roll_PID-0.5*Phiab_PID;
-Aail2_scaled = 0.1*-0.81*roll_PID+0.5*Phiab_PID;
-Aele_scaled = pitch_PID;
-Athro_scaled = thro_des+keeppositive(1.2*yaw_PID)+keeppositive(-0.4*roll_PID);
-Arudd_scaled = yaw_PID;
+A_ail1_scaled = 0.1*-0.41*roll_PID-0.5*Phiab_PID;
+A_ail2_scaled = 0.1*-0.81*roll_PID+0.5*Phiab_PID;
+A_ele_scaled = pitch_PID;
+A_thro_scaled = thro_des+keeppositive(1.2*yaw_PID)+keeppositive(-0.4*roll_PID);
+A_rudd_scaled = yaw_PID;
 central_pitch=-45.0*coeroll*roll_PID;
 
 
 }
 
 */
-// USBSerial.println(Aail1_scaled);
+// USBSerial.println(A_ail1_scaled);
 
 // 3机一起飞 BAC
 #if defined THREEPLANE
@@ -429,95 +429,95 @@ central_pitch=-45.0*coeroll*roll_PID;
 
   // 策略1
   if (channel_6_pwm > 1600) {
-    Bail1_scaled =
+    B_ail1_scaled =
         1.016 * roll_PID + coeab * 1 * Phiab_PID - coeac * 0.68 * Phiac_PID;
-    Bail2_scaled = 0.593 * roll_PID - coeab * 0.3392 * Phiab_PID -
+    B_ail2_scaled = 0.593 * roll_PID - coeab * 0.3392 * Phiab_PID -
                    coeac * 0.12 * Phiac_PID;
-    Bthro_scaled = thro_des - 0.8 * yaw_PID;
-    Brudd_scaled = yaw_PID;
+    B_thro_scaled = thro_des - 0.8 * yaw_PID;
+    B_rudd_scaled = yaw_PID;
     B_pitch_sp = pitch_des_local; // 2机、3机
 
-    Aail1_scaled =
+    A_ail1_scaled =
         0.1 * roll_PID - coeab * 1.186 * Phiab_PID + coeac * 0.71 * Phiac_PID;
-    Aail2_scaled =
+    A_ail2_scaled =
         -0.1 * roll_PID - coeab * 0.71 * Phiab_PID + coeac * 1.16 * Phiac_PID;
-    Aele_scaled = pitch_PID;
-    Athro_scaled = thro_des;
-    Arudd_scaled = yaw_PID;
+    A_ele_scaled = pitch_PID;
+    A_thro_scaled = thro_des;
+    A_rudd_scaled = yaw_PID;
 
-    Cail1_scaled =
+    C_ail1_scaled =
         -0.593 * roll_PID + coeab * 0.12 * Phiab_PID + coeac * 0.34 * Phiac_PID;
-    Cail2_scaled =
+    C_ail2_scaled =
         -1.016 * roll_PID + coeab * 0.68 * Phiab_PID - coeac * 1 * Phiac_PID;
-    Cthro_scaled = thro_des + 0.8 * yaw_PID;
-    Crudd_scaled = yaw_PID;
+    C_thro_scaled = thro_des + 0.8 * yaw_PID;
+    C_rudd_scaled = yaw_PID;
     C_pitch_sp = pitch_des_local; // 2机、3机
   }
   // 策略2
 
   else if (channel_6_pwm < 1600 && channel_6_pwm > 1400) {
     coeroll = 0.2;
-    Bail1_scaled = 1.016 * coeroll * roll_PID + coeab * 0.864 * Phiab_PID -
+    B_ail1_scaled = 1.016 * coeroll * roll_PID + coeab * 0.864 * Phiab_PID -
                    coeac * 0.62 * Phiac_PID;
-    Bail2_scaled = 0.593 * coeroll * roll_PID - coeab * 0.27 * Phiab_PID -
+    B_ail2_scaled = 0.593 * coeroll * roll_PID - coeab * 0.27 * Phiab_PID -
                    coeac * 0.08 * Phiac_PID;
-    Bthro_scaled =
+    B_thro_scaled =
         thro_des + keeppositive(-1.2 * yaw_PID) + keeppositive(0.4 * roll_PID);
-    Brudd_scaled = yaw_PID;
+    B_rudd_scaled = yaw_PID;
     B_pitch_sp = pitch_des_local + 20.0 * roll_PID_lpf; // 2机、3机
     B_ele_control_ff_us = 0.0;
 
-    Aail1_scaled =
+    A_ail1_scaled =
         0.1 * roll_PID - coeab * 1.0 * Phiab_PID + coeac * 0.65 * Phiac_PID;
-    Aail2_scaled =
+    A_ail2_scaled =
         -0.1 * roll_PID - coeab * 0.65 * Phiab_PID + coeac * 1.0 * Phiac_PID;
-    Aele_scaled = pitch_PID;
-    Athro_scaled = thro_des;
-    Arudd_scaled = yaw_PID;
+    A_ele_scaled = pitch_PID;
+    A_thro_scaled = thro_des;
+    A_rudd_scaled = yaw_PID;
 
-    Cail1_scaled = -0.593 * coeroll * roll_PID + coeab * 0.08 * Phiab_PID +
+    C_ail1_scaled = -0.593 * coeroll * roll_PID + coeab * 0.08 * Phiab_PID +
                    coeac * 0.27 * Phiac_PID;
-    Cail2_scaled = -1.016 * coeroll * roll_PID + coeab * 0.62 * Phiab_PID -
+    C_ail2_scaled = -1.016 * coeroll * roll_PID + coeab * 0.62 * Phiab_PID -
                    coeac * 0.864 * Phiac_PID;
-    Cthro_scaled =
+    C_thro_scaled =
         thro_des + keeppositive(1.2 * yaw_PID) + keeppositive(-0.4 * roll_PID);
-    Crudd_scaled = yaw_PID;
+    C_rudd_scaled = yaw_PID;
     C_pitch_sp = pitch_des_local - 20.0 * roll_PID_lpf; // 2机、3机
     C_ele_control_ff_us = 0.0;
 
   } else {
     coeroll = 0.2;
 
-    Bail1_scaled = 1.016 * coeroll * roll_PID + coeab * 0.864 * Phiab_PID -
+    B_ail1_scaled = 1.016 * coeroll * roll_PID + coeab * 0.864 * Phiab_PID -
                    coeac * 0.62 * Phiac_PID;
-    Bail2_scaled = 0.593 * coeroll * roll_PID - coeab * 0.27 * Phiab_PID -
+    B_ail2_scaled = 0.593 * coeroll * roll_PID - coeab * 0.27 * Phiab_PID -
                    coeac * 0.08 * Phiac_PID;
-    Bthro_scaled =
+    B_thro_scaled =
         thro_des + keeppositive(-1.2 * yaw_PID) + keeppositive(0.4 * roll_PID);
-    Brudd_scaled = yaw_PID;
+    B_rudd_scaled = yaw_PID;
     B_pitch_sp = pitch_des_local + 30.0 * roll_PID_lpf +
-                 6.0 * (Bail1_scaled + Bail2_scaled); // 2机、3机
+                 6.0 * (B_ail1_scaled + B_ail2_scaled); // 2机、3机
     B_ele_control_ff_us =
         -10.0 * 20.0 * roll_PID_lpf - 10.0 * roll_PID_dot_lpf;
 
-    Aail1_scaled =
+    A_ail1_scaled =
         0.1 * roll_PID - coeab * 1.0 * Phiab_PID + coeac * 0.65 * Phiac_PID;
-    Aail2_scaled =
+    A_ail2_scaled =
         -0.1 * roll_PID - coeab * 0.65 * Phiab_PID + coeac * 1.0 * Phiac_PID;
-    Aele_scaled = pitch_PID;
-    Athro_scaled = thro_des;
-    Arudd_scaled = yaw_PID;
+    A_ele_scaled = pitch_PID;
+    A_thro_scaled = thro_des;
+    A_rudd_scaled = yaw_PID;
 
-    Cail1_scaled = -0.593 * coeroll * roll_PID + coeab * 0.08 * Phiab_PID +
+    C_ail1_scaled = -0.593 * coeroll * roll_PID + coeab * 0.08 * Phiab_PID +
                    coeac * 0.27 * Phiac_PID;
-    Cail2_scaled = -1.016 * coeroll * roll_PID + coeab * 0.62 * Phiab_PID -
+    C_ail2_scaled = -1.016 * coeroll * roll_PID + coeab * 0.62 * Phiab_PID -
                    coeac * 0.864 * Phiac_PID;
-    Cthro_scaled =
+    C_thro_scaled =
         thro_des + keeppositive(1.2 * yaw_PID) + keeppositive(-0.4 * roll_PID);
-    Crudd_scaled = yaw_PID;
+    C_rudd_scaled = yaw_PID;
     C_pitch_sp =
         pitch_des_local - 30.0 * roll_PID_lpf +
-        6.0 * (Cail1_scaled + Cail2_scaled); // 2机、3机 增加了相对滚转到升降舵
+        6.0 * (C_ail1_scaled + C_ail2_scaled); // 2机、3机 增加了相对滚转到升降舵
     C_ele_control_ff_us = 10.0 * 20.0 * roll_PID_lpf + 10.0 * roll_PID_dot_lpf;
   }
 
@@ -550,38 +550,38 @@ central_pitch=-45.0*coeroll*roll_PID;
 
   // 策略1
   if (channel_6_pwm > 1600) {
-    Dail1_scaled = 1.0 * coeroll * roll_PID + 1.0 * coeab * Phiab_PID -
+    D_ail1_scaled = 1.0 * coeroll * roll_PID + 1.0 * coeab * Phiab_PID -
                    0.53 * coeac * Phiac_PID + 1.0 * coebd * Phibd_PID;
-    Dail2_scaled = 0.74 * coeroll * roll_PID + 0.325 * coeab * Phiab_PID -
+    D_ail2_scaled = 0.74 * coeroll * roll_PID + 0.325 * coeab * Phiab_PID -
                    0.26 * coeac * Phiac_PID - 0.1 * coebd * Phibd_PID;
-    Dthro_scaled = thro_des - 1.2 * yaw_PID;
-    Drudd_scaled = yaw_PID;
+    D_thro_scaled = thro_des - 1.2 * yaw_PID;
+    D_rudd_scaled = yaw_PID;
     D_pitch_sp = pitch_des_local + 0.13 * coeroll * roll_des;
 
-    Bail1_scaled = 0.28 * coeroll * roll_PID - 0.667 * coeab * Phiab_PID +
+    B_ail1_scaled = 0.28 * coeroll * roll_PID - 0.667 * coeab * Phiab_PID +
                    0.19 * coeac * Phiac_PID - 1.0 * coebd * Phibd_PID;
-    Bail2_scaled = 0.13 * coeroll * roll_PID - 1.0 * coeab * Phiab_PID +
+    B_ail2_scaled = 0.13 * coeroll * roll_PID - 1.0 * coeab * Phiab_PID +
                    0.39 * coeac * Phiac_PID - 0.736 * coebd * Phibd_PID;
-    Bthro_scaled = thro_des - 0.6 * yaw_PID;
-    Brudd_scaled = yaw_PID;
+    B_thro_scaled = thro_des - 0.6 * yaw_PID;
+    B_rudd_scaled = yaw_PID;
     B_pitch_sp = pitch_des_local + 0.07 * coeroll * roll_des;
 
-    Aail1_scaled = -0.13 * coeroll * roll_PID - 1.0 * coeab * Phiab_PID +
+    A_ail1_scaled = -0.13 * coeroll * roll_PID - 1.0 * coeab * Phiab_PID +
                    0.736 * coeac * Phiac_PID - 0.39 * coebd * Phibd_PID;
-    Aail2_scaled = -0.28 * coeroll * roll_PID - 0.667 * coeab * Phiab_PID +
+    A_ail2_scaled = -0.28 * coeroll * roll_PID - 0.667 * coeab * Phiab_PID +
                    1.0 * coeac * Phiac_PID - 0.19 * coebd * Phibd_PID;
-    Aele_scaled = pitch_PID;
-    Athro_scaled = thro_des + 0.6 * yaw_PID;
+    A_ele_scaled = pitch_PID;
+    A_thro_scaled = thro_des + 0.6 * yaw_PID;
     ;
-    Arudd_scaled = yaw_PID;
+    A_rudd_scaled = yaw_PID;
     central_pitch = -0.07 * coeroll * roll_des;
 
-    Cail1_scaled = -0.74 * coeroll * roll_PID + 0.325 * coeab * Phiab_PID +
+    C_ail1_scaled = -0.74 * coeroll * roll_PID + 0.325 * coeab * Phiab_PID +
                    0.1 * coeac * Phiac_PID + 0.26 * coebd * Phibd_PID;
-    Cail2_scaled = -1.0 * coeroll * roll_PID + 1.0 * coeab * Phiab_PID -
+    C_ail2_scaled = -1.0 * coeroll * roll_PID + 1.0 * coeab * Phiab_PID -
                    1.0 * coeac * Phiac_PID + 0.53 * coebd * Phibd_PID;
-    Cthro_scaled = thro_des + 1.2 * yaw_PID;
-    Crudd_scaled = yaw_PID;
+    C_thro_scaled = thro_des + 1.2 * yaw_PID;
+    C_rudd_scaled = yaw_PID;
     C_pitch_sp = pitch_des_local - 0.13 * coeroll * roll_des;
 
   }
@@ -590,84 +590,84 @@ central_pitch=-45.0*coeroll*roll_PID;
 
   else if (channel_6_pwm < 1600 && channel_6_pwm > 1400) {
     coeroll = 0.3;
-    Dail1_scaled = 1.0 * coeroll * roll_PID + 1.0 * coeab * Phiab_PID -
+    D_ail1_scaled = 1.0 * coeroll * roll_PID + 1.0 * coeab * Phiab_PID -
                    0.53 * coeac * Phiac_PID + 1.0 * coebd * Phibd_PID;
-    Dail2_scaled = 0.74 * coeroll * roll_PID + 0.325 * coeab * Phiab_PID -
+    D_ail2_scaled = 0.74 * coeroll * roll_PID + 0.325 * coeab * Phiab_PID -
                    0.26 * coeac * Phiac_PID - 0.1 * coebd * Phibd_PID;
-    Dthro_scaled =
+    D_thro_scaled =
         thro_des + keeppositive(-1.5 * yaw_PID) + keeppositive(0.5 * roll_PID);
-    Drudd_scaled = yaw_PID;
+    D_rudd_scaled = yaw_PID;
     D_pitch_sp = pitch_des_local + 70.0 * roll_PID;
 
-    Bail1_scaled = 0.28 * coeroll * roll_PID - 0.667 * coeab * Phiab_PID +
+    B_ail1_scaled = 0.28 * coeroll * roll_PID - 0.667 * coeab * Phiab_PID +
                    0.19 * coeac * Phiac_PID - 1.0 * coebd * Phibd_PID;
-    Bail2_scaled = 0.1 * coeroll * roll_PID - 1.0 * coeab * Phiab_PID +
+    B_ail2_scaled = 0.1 * coeroll * roll_PID - 1.0 * coeab * Phiab_PID +
                    0.39 * coeac * Phiac_PID - 0.736 * coebd * Phibd_PID;
-    Bthro_scaled =
+    B_thro_scaled =
         thro_des + keeppositive(-1.0 * yaw_PID) + keeppositive(0.3 * roll_PID);
-    Brudd_scaled = yaw_PID;
+    B_rudd_scaled = yaw_PID;
     B_pitch_sp = pitch_des_local + 30.0 * roll_PID;
 
-    Aail1_scaled = -0.1 * coeroll * roll_PID - 1.0 * coeab * Phiab_PID +
+    A_ail1_scaled = -0.1 * coeroll * roll_PID - 1.0 * coeab * Phiab_PID +
                    0.736 * coeac * Phiac_PID - 0.39 * coebd * Phibd_PID;
-    Aail2_scaled = -0.28 * coeroll * roll_PID - 0.667 * coeab * Phiab_PID +
+    A_ail2_scaled = -0.28 * coeroll * roll_PID - 0.667 * coeab * Phiab_PID +
                    1.0 * coeac * Phiac_PID - 0.19 * coebd * Phibd_PID;
-    Aele_scaled = pitch_PID;
-    Athro_scaled =
+    A_ele_scaled = pitch_PID;
+    A_thro_scaled =
         thro_des + keeppositive(1.0 * yaw_PID) + keeppositive(-0.3 * roll_PID);
-    Arudd_scaled = yaw_PID;
+    A_rudd_scaled = yaw_PID;
     central_pitch = -30.0 * roll_PID;
 
-    Cail1_scaled = -0.74 * coeroll * roll_PID + 0.325 * coeab * Phiab_PID +
+    C_ail1_scaled = -0.74 * coeroll * roll_PID + 0.325 * coeab * Phiab_PID +
                    0.1 * coeac * Phiac_PID + 0.26 * coebd * Phibd_PID;
-    Cail2_scaled = -1.0 * coeroll * roll_PID + 1.0 * coeab * Phiab_PID -
+    C_ail2_scaled = -1.0 * coeroll * roll_PID + 1.0 * coeab * Phiab_PID -
                    1.0 * coeac * Phiac_PID + 0.53 * coebd * Phibd_PID;
-    Cthro_scaled =
+    C_thro_scaled =
         thro_des + keeppositive(1.5 * yaw_PID) + keeppositive(-0.5 * roll_PID);
-    Crudd_scaled = yaw_PID;
+    C_rudd_scaled = yaw_PID;
     C_pitch_sp = pitch_des_local - 70.0 * roll_PID;
 
   } else {
 
     coeroll = 0.2;
-    Dail1_scaled = 1.0 * coeroll * roll_PID + 1.0 * coeab * Phiab_PID -
+    D_ail1_scaled = 1.0 * coeroll * roll_PID + 1.0 * coeab * Phiab_PID -
                    0.53 * coeac * Phiac_PID + 1.0 * coebd * Phibd_PID;
-    Dail2_scaled = 0.74 * coeroll * roll_PID + 0.325 * coeab * Phiab_PID -
+    D_ail2_scaled = 0.74 * coeroll * roll_PID + 0.325 * coeab * Phiab_PID -
                    0.26 * coeac * Phiac_PID - 0.1 * coebd * Phibd_PID;
-    Dthro_scaled =
+    D_thro_scaled =
         thro_des + keeppositive(-1.5 * yaw_PID) + keeppositive(0.5 * roll_PID);
-    Drudd_scaled = yaw_PID;
+    D_rudd_scaled = yaw_PID;
     D_pitch_sp = pitch_des_local + 70.0 * roll_PID + 35.0 * Phiab_PID -
                  20.0 * Phiac_PID + 20.0 * Phibd_PID;
 
-    Bail1_scaled = 0.28 * coeroll * roll_PID - 0.667 * coeab * Phiab_PID +
+    B_ail1_scaled = 0.28 * coeroll * roll_PID - 0.667 * coeab * Phiab_PID +
                    0.19 * coeac * Phiac_PID - 1.0 * coebd * Phibd_PID;
-    Bail2_scaled = 0.1 * coeroll * roll_PID - 1.0 * coeab * Phiab_PID +
+    B_ail2_scaled = 0.1 * coeroll * roll_PID - 1.0 * coeab * Phiab_PID +
                    0.39 * coeac * Phiac_PID - 0.736 * coebd * Phibd_PID;
-    Bthro_scaled =
+    B_thro_scaled =
         thro_des + keeppositive(-1.0 * yaw_PID) + keeppositive(0.3 * roll_PID);
-    Brudd_scaled = yaw_PID;
+    B_rudd_scaled = yaw_PID;
     B_pitch_sp = pitch_des_local + 30.0 * roll_PID - 40.0 * Phiab_PID +
                  15.0 * Phiac_PID - 45.0 * Phibd_PID;
 
-    Aail1_scaled = -0.1 * coeroll * roll_PID - 1.0 * coeab * Phiab_PID +
+    A_ail1_scaled = -0.1 * coeroll * roll_PID - 1.0 * coeab * Phiab_PID +
                    0.736 * coeac * Phiac_PID - 0.39 * coebd * Phibd_PID;
-    Aail2_scaled = -0.28 * coeroll * roll_PID - 0.667 * coeab * Phiab_PID +
+    A_ail2_scaled = -0.28 * coeroll * roll_PID - 0.667 * coeab * Phiab_PID +
                    1.0 * coeac * Phiac_PID - 0.19 * coebd * Phibd_PID;
-    Aele_scaled = pitch_PID;
-    Athro_scaled =
+    A_ele_scaled = pitch_PID;
+    A_thro_scaled =
         thro_des + keeppositive(1.0 * yaw_PID) + keeppositive(-0.3 * roll_PID);
-    Arudd_scaled = yaw_PID;
+    A_rudd_scaled = yaw_PID;
     central_pitch = -30.0 * roll_PID - 40.0 * Phiab_PID + 45.0 * Phiac_PID -
                     15.0 * Phibd_PID;
 
-    Cail1_scaled = -0.74 * coeroll * roll_PID + 0.325 * coeab * Phiab_PID +
+    C_ail1_scaled = -0.74 * coeroll * roll_PID + 0.325 * coeab * Phiab_PID +
                    0.1 * coeac * Phiac_PID + 0.26 * coebd * Phibd_PID;
-    Cail2_scaled = -1.0 * coeroll * roll_PID + 1.0 * coeab * Phiab_PID -
+    C_ail2_scaled = -1.0 * coeroll * roll_PID + 1.0 * coeab * Phiab_PID -
                    1.0 * coeac * Phiac_PID + 0.53 * coebd * Phibd_PID;
-    Cthro_scaled =
+    C_thro_scaled =
         thro_des + keeppositive(1.5 * yaw_PID) + keeppositive(-0.5 * roll_PID);
-    Crudd_scaled = yaw_PID;
+    C_rudd_scaled = yaw_PID;
     C_pitch_sp = pitch_des_local - 70.0 * roll_PID + 35.0 * Phiab_PID -
                  20.0 * Phiac_PID + 20.0 * Phibd_PID;
   }
@@ -703,98 +703,98 @@ central_pitch=-45.0*coeroll*roll_PID;
 
   // 策略1
   coeroll = 1.2;
-  Dail1_scaled = 1.0 * coeroll * roll_PID + 1.0 * coeab * Phiab_PID -
+  D_ail1_scaled = 1.0 * coeroll * roll_PID + 1.0 * coeab * Phiab_PID -
                  0.72 * coeac * Phiac_PID + 1.0 * coebd * Phibd_PID -
                  0.38 * coece * Phice_PID;
-  Dail2_scaled = 0.75 * coeroll * roll_PID + 0.44 * coeab * Phiab_PID -
+  D_ail2_scaled = 0.75 * coeroll * roll_PID + 0.44 * coeab * Phiab_PID -
                  0.42 * coeac * Phiac_PID + 0.06 * coebd * Phibd_PID -
                  0.23 * coece * Phice_PID;
-  Dthro_scaled = thro_des - 1.0 * yaw_PID;
-  Drudd_scaled = yaw_PID;
+  D_thro_scaled = thro_des - 1.0 * yaw_PID;
+  D_rudd_scaled = yaw_PID;
   D_pitch_sp = pitch_des_local + 0.3 * coeroll * roll_des;
 
-  Bail1_scaled = 0.417 * coeroll * roll_PID - 0.36 * coeab * Phiab_PID +
+  B_ail1_scaled = 0.417 * coeroll * roll_PID - 0.36 * coeab * Phiab_PID +
                  0.05 * coeac * Phiac_PID - 0.7 * coebd * Phibd_PID -
                  0.01 * coece * Phice_PID;
-  Bail2_scaled = 0.33 * coeroll * roll_PID - 0.76 * coeab * Phiab_PID +
+  B_ail2_scaled = 0.33 * coeroll * roll_PID - 0.76 * coeab * Phiab_PID +
                  0.31 * coeac * Phiac_PID - 0.6 * coebd * Phibd_PID +
                  0.08 * coece * Phice_PID;
-  Bthro_scaled = thro_des - 0.8 * yaw_PID;
-  Brudd_scaled = yaw_PID;
+  B_thro_scaled = thro_des - 0.8 * yaw_PID;
+  B_rudd_scaled = yaw_PID;
   B_pitch_sp = pitch_des_local + 0.15 * coeroll * roll_des;
 
-  Aail1_scaled = 0.15 * coeroll * roll_PID - 0.88 * coeab * Phiab_PID +
+  A_ail1_scaled = 0.15 * coeroll * roll_PID - 0.88 * coeab * Phiab_PID +
                  0.66 * coeac * Phiac_PID - 0.42 * coebd * Phibd_PID +
                  0.26 * coece * Phice_PID;
-  Aail2_scaled = -0.15 * coeroll * roll_PID - 0.66 * coeab * Phiab_PID +
+  A_ail2_scaled = -0.15 * coeroll * roll_PID - 0.66 * coeab * Phiab_PID +
                  0.88 * coeac * Phiac_PID - 0.27 * coebd * Phibd_PID +
                  0.38 * coece * Phice_PID;
-  Aele_scaled = pitch_PID;
-  Athro_scaled = thro_des;
-  Arudd_scaled = yaw_PID;
+  A_ele_scaled = pitch_PID;
+  A_thro_scaled = thro_des;
+  A_rudd_scaled = yaw_PID;
 
-  Cail1_scaled = -0.33 * coeroll * roll_PID - 0.31 * coeab * Phiab_PID +
+  C_ail1_scaled = -0.33 * coeroll * roll_PID - 0.31 * coeab * Phiab_PID +
                  0.76 * coeac * Phiac_PID - 0.08 * coebd * Phibd_PID +
                  0.6 * coece * Phice_PID;
-  Cail2_scaled = -0.417 * coeroll * roll_PID - 0.05 * coeab * Phiab_PID +
+  C_ail2_scaled = -0.417 * coeroll * roll_PID - 0.05 * coeab * Phiab_PID +
                  0.36 * coeac * Phiac_PID - 0.01 * coebd * Phibd_PID +
                  0.7 * coece * Phice_PID;
-  Cthro_scaled = thro_des + 0.8 * yaw_PID;
-  Crudd_scaled = yaw_PID;
+  C_thro_scaled = thro_des + 0.8 * yaw_PID;
+  C_rudd_scaled = yaw_PID;
   C_pitch_sp = pitch_des_local - 0.15 * coeroll * roll_des;
 
-  Eail1_scaled = -0.75 * coeroll * roll_PID + 0.42 * coeab * Phiab_PID -
+  E_ail1_scaled = -0.75 * coeroll * roll_PID + 0.42 * coeab * Phiab_PID -
                  coeac * 0.44 * Phiac_PID + 0.23 * coebd * Phibd_PID -
                  0.06 * coece * Phice_PID;
-  Eail2_scaled = -1.0 * coeroll * roll_PID + 0.72 * coeab * Phiab_PID -
+  E_ail2_scaled = -1.0 * coeroll * roll_PID + 0.72 * coeab * Phiab_PID -
                  1.0 * coeac * Phiac_PID + 0.38 * coebd * Phibd_PID -
                  1.0 * coece * Phice_PID;
-  Ethro_scaled = thro_des + 1.0 * yaw_PID;
-  Erudd_scaled = yaw_PID;
+  E_thro_scaled = thro_des + 1.0 * yaw_PID;
+  E_rudd_scaled = yaw_PID;
   E_pitch_sp = pitch_des_local - 0.3 * coeroll * roll_des;
 
   /*
    else if (channel_6_pwm < 1600 && channel_6_pwm > 1400) {
      //策略2
      coeroll = 0.5;
-     Dail1_scaled = 1.0 * coeroll * roll_PID + 1.0 * coeab * Phiab_PID - 0.72 *
+     D_ail1_scaled = 1.0 * coeroll * roll_PID + 1.0 * coeab * Phiab_PID - 0.72 *
    coeac * Phiac_PID + 1.0 * coebd * Phibd_PID - 0.38 * coece * Phice_PID;
-     Dail2_scaled = 0.75 * coeroll * roll_PID + 0.44 * coeab * Phiab_PID - 0.42
+     D_ail2_scaled = 0.75 * coeroll * roll_PID + 0.44 * coeab * Phiab_PID - 0.42
    * coeac * Phiac_PID + 0.06 * coebd * Phibd_PID - 0.23 * coece * Phice_PID;
-     Dthro_scaled = thro_des + keeppositive(-1.8 * yaw_PID) + keeppositive(0.7 *
-   roll_PID); Drudd_scaled = yaw_PID; D_pitch_sp = pitch_des_local + 80.0 *
+     D_thro_scaled = thro_des + keeppositive(-1.8 * yaw_PID) + keeppositive(0.7 *
+   roll_PID); D_rudd_scaled = yaw_PID; D_pitch_sp = pitch_des_local + 80.0 *
    roll_PID ;
 
-     Bail1_scaled = 0.417 * coeroll * roll_PID - 0.36 * coeab * Phiab_PID + 0.05
+     B_ail1_scaled = 0.417 * coeroll * roll_PID - 0.36 * coeab * Phiab_PID + 0.05
    * coeac * Phiac_PID - 0.7 * coebd * Phibd_PID - 0.01 * coece * Phice_PID;
-     Bail2_scaled = 0.33 * coeroll * roll_PID - 0.76 * coeab * Phiab_PID + 0.31
+     B_ail2_scaled = 0.33 * coeroll * roll_PID - 0.76 * coeab * Phiab_PID + 0.31
    * coeac * Phiac_PID - 0.6 * coebd * Phibd_PID + 0.08 * coece * Phice_PID;
-     Bthro_scaled = thro_des + keeppositive(-1.0 * yaw_PID) + keeppositive(0.4 *
-   roll_PID); Brudd_scaled = yaw_PID; B_pitch_sp = pitch_des_local + 30.0 *
+     B_thro_scaled = thro_des + keeppositive(-1.0 * yaw_PID) + keeppositive(0.4 *
+   roll_PID); B_rudd_scaled = yaw_PID; B_pitch_sp = pitch_des_local + 30.0 *
    roll_PID ;
 
-     Aail1_scaled = 0.15 * coeroll * roll_PID - 0.88 * coeab * Phiab_PID + 0.66
+     A_ail1_scaled = 0.15 * coeroll * roll_PID - 0.88 * coeab * Phiab_PID + 0.66
    * coeac * Phiac_PID - 0.42 * coebd * Phibd_PID + 0.27 * coece * Phice_PID;
-     Aail2_scaled = -0.15 * coeroll * roll_PID - 0.66 * coeab * Phiab_PID + 0.88
+     A_ail2_scaled = -0.15 * coeroll * roll_PID - 0.66 * coeab * Phiab_PID + 0.88
    * coeac * Phiac_PID - 0.27 * coebd * Phibd_PID + 0.42 * coece * Phice_PID;
-     Aele_scaled = pitch_PID;
-     Athro_scaled = thro_des;
-     Arudd_scaled = yaw_PID;
+     A_ele_scaled = pitch_PID;
+     A_thro_scaled = thro_des;
+     A_rudd_scaled = yaw_PID;
 
-     Cail1_scaled = -0.33 * coeroll * roll_PID - 0.31 * coeab * Phiab_PID + 0.76
+     C_ail1_scaled = -0.33 * coeroll * roll_PID - 0.31 * coeab * Phiab_PID + 0.76
    * coeac * Phiac_PID - 0.08 * coebd * Phibd_PID + 0.6 * coece * Phice_PID;
-     Cail2_scaled = -0.417 * coeroll * roll_PID - 0.05 * coeab * Phiab_PID +
+     C_ail2_scaled = -0.417 * coeroll * roll_PID - 0.05 * coeab * Phiab_PID +
    0.36 * coeac * Phiac_PID - 0.01 * coebd * Phibd_PID + 0.7 * coece *
-   Phice_PID; Cthro_scaled = thro_des + keeppositive(1.0 * yaw_PID) +
-   keeppositive(-0.4 * roll_PID); Crudd_scaled = yaw_PID; C_pitch_sp =
+   Phice_PID; C_thro_scaled = thro_des + keeppositive(1.0 * yaw_PID) +
+   keeppositive(-0.4 * roll_PID); C_rudd_scaled = yaw_PID; C_pitch_sp =
    pitch_des_local - 30.0 * roll_PID;
 
-     Eail1_scaled = -0.75 * coeroll * roll_PID + 0.42 * coeab * Phiab_PID -
+     E_ail1_scaled = -0.75 * coeroll * roll_PID + 0.42 * coeab * Phiab_PID -
    coeac * 0.44 * Phiac_PID + 0.23 * coebd * Phibd_PID - 0.06 * coece *
-   Phice_PID; Eail2_scaled = -1.0 * coeroll * roll_PID + 0.72 * coeab *
+   Phice_PID; E_ail2_scaled = -1.0 * coeroll * roll_PID + 0.72 * coeab *
    Phiab_PID - 1.0 * coeac * Phiac_PID + 0.38 * coebd * Phibd_PID - 1.0 * coece
-   * Phice_PID; Ethro_scaled = thro_des + keeppositive(1.8 * yaw_PID) +
-   keeppositive(-0.7 * roll_PID); Erudd_scaled = yaw_PID; E_pitch_sp =
+   * Phice_PID; E_thro_scaled = thro_des + keeppositive(1.8 * yaw_PID) +
+   keeppositive(-0.7 * roll_PID); E_rudd_scaled = yaw_PID; E_pitch_sp =
    pitch_des_local - 80.0 * roll_PID;
    }
 
@@ -825,34 +825,34 @@ central_pitch=-45.0*coeroll*roll_PID;
      de_config = Bplusminismall_pinv * dw_config;
      de_att = Bplusfullsmall_pinv * dw_att;
      //printFullMatrix(de_config);
-     Dail1_scaled = de_att(0) + de_config(0);
-     Dail2_scaled = de_att(1) + de_config(1);
-     Dthro_scaled = thro_des + keeppositive(-1.4 * yaw_PID) + keeppositive(0.5 *
-   roll_PID); Drudd_scaled = yaw_PID; D_pitch_sp = pitch_des_local + 80.0 *
+     D_ail1_scaled = de_att(0) + de_config(0);
+     D_ail2_scaled = de_att(1) + de_config(1);
+     D_thro_scaled = thro_des + keeppositive(-1.4 * yaw_PID) + keeppositive(0.5 *
+   roll_PID); D_rudd_scaled = yaw_PID; D_pitch_sp = pitch_des_local + 80.0 *
    roll_PID - 1.0;
 
-     Bail1_scaled = de_att(2) + de_config(2);
-     Bail2_scaled = de_att(3) + de_config(3);
-     Bthro_scaled = thro_des + keeppositive(-0.8 * yaw_PID) + keeppositive(0.3 *
-   roll_PID); Brudd_scaled = yaw_PID; B_pitch_sp = pitch_des_local + 30.0 *
+     B_ail1_scaled = de_att(2) + de_config(2);
+     B_ail2_scaled = de_att(3) + de_config(3);
+     B_thro_scaled = thro_des + keeppositive(-0.8 * yaw_PID) + keeppositive(0.3 *
+   roll_PID); B_rudd_scaled = yaw_PID; B_pitch_sp = pitch_des_local + 30.0 *
    roll_PID - 1.0;
 
-     Aail1_scaled = de_att(4) + de_config(4);
-     Aail2_scaled = de_att(5) + de_config(5);
-     Aele_scaled = pitch_PID;
-     Athro_scaled = thro_des;
-     Arudd_scaled = yaw_PID;
+     A_ail1_scaled = de_att(4) + de_config(4);
+     A_ail2_scaled = de_att(5) + de_config(5);
+     A_ele_scaled = pitch_PID;
+     A_thro_scaled = thro_des;
+     A_rudd_scaled = yaw_PID;
 
-     Cail1_scaled = de_att(6) + de_config(6);
-     Cail2_scaled = de_att(7) + de_config(7);
-     Cthro_scaled = thro_des + keeppositive(0.8 * yaw_PID) + keeppositive(-0.3 *
-   roll_PID); Crudd_scaled = yaw_PID; C_pitch_sp = pitch_des_local - 30.0 *
+     C_ail1_scaled = de_att(6) + de_config(6);
+     C_ail2_scaled = de_att(7) + de_config(7);
+     C_thro_scaled = thro_des + keeppositive(0.8 * yaw_PID) + keeppositive(-0.3 *
+   roll_PID); C_rudd_scaled = yaw_PID; C_pitch_sp = pitch_des_local - 30.0 *
    roll_PID;
 
-     Eail1_scaled = de_att(8) + de_config(8);
-     Eail2_scaled = de_att(9) + de_config(9);
-     Ethro_scaled = thro_des + keeppositive(1.4 * yaw_PID) + keeppositive(-0.5 *
-   roll_PID); Erudd_scaled = yaw_PID; E_pitch_sp = pitch_des_local - 80.0 *
+     E_ail1_scaled = de_att(8) + de_config(8);
+     E_ail2_scaled = de_att(9) + de_config(9);
+     E_thro_scaled = thro_des + keeppositive(1.4 * yaw_PID) + keeppositive(-0.5 *
+   roll_PID); E_rudd_scaled = yaw_PID; E_pitch_sp = pitch_des_local - 80.0 *
    roll_PID;
    }
      */
@@ -901,96 +901,96 @@ central_pitch=-45.0*coeroll*roll_PID;
   // 策略1
   coeroll = 1.8;
 
-  Fail1_scaled = 1.0 * coeroll * roll_PID + 1.0 * coeab * Phiab_PID -
+  F_ail1_scaled = 1.0 * coeroll * roll_PID + 1.0 * coeab * Phiab_PID -
                  0.77 * coeac * Phiac_PID + 1.0 * coebd * Phibd_PID -
                  0.44 * coece * Phice_PID + 1.0 * coedf * Phidf_PID -
                  0.24 * coeeg * Phieg_PID;
-  Fail2_scaled = 0.87 * coeroll * roll_PID + 0.69 * coeab * Phiab_PID -
+  F_ail2_scaled = 0.87 * coeroll * roll_PID + 0.69 * coeab * Phiab_PID -
                  0.56 * coeac * Phiac_PID + 0.54 * coebd * Phibd_PID -
                  0.33 * coece * Phice_PID + 0.19 * coedf * Phidf_PID -
                  0.18 * coeeg * Phieg_PID;
-  Fthro_scaled = 0.85 * thro_des - 1.5 * yaw_PID;
-  Frudd_scaled = yaw_PID;
+  F_thro_scaled = 0.85 * thro_des - 1.5 * yaw_PID;
+  F_rudd_scaled = yaw_PID;
   F_pitch_sp = pitch_des_local + 0.5 * coeroll * roll_des;
 
-  Dail1_scaled = 0.72 * coeroll * roll_PID + 0.31 * coeab * Phiab_PID -
+  D_ail1_scaled = 0.72 * coeroll * roll_PID + 0.31 * coeab * Phiab_PID -
                  0.32 * coeac * Phiac_PID + 0.06 * coebd * Phibd_PID -
                  0.21 * coece * Phice_PID - 0.27 * coedf * Phidf_PID -
                  0.12 * coeeg * Phieg_PID;
-  Dail2_scaled = 0.55 * coeroll * roll_PID - 0.12 * coeab * Phiab_PID -
+  D_ail2_scaled = 0.55 * coeroll * roll_PID - 0.12 * coeab * Phiab_PID -
                  0.06 * coeac * Phiac_PID - 0.44 * coebd * Phibd_PID -
                  0.07 * coece * Phice_PID - 0.41 * coedf * Phidf_PID -
                  0.05 * coeeg * Phieg_PID;
-  Dthro_scaled = 0.92 * thro_des - 1.0 * yaw_PID;
-  Drudd_scaled = yaw_PID;
+  D_thro_scaled = 0.92 * thro_des - 1.0 * yaw_PID;
+  D_rudd_scaled = yaw_PID;
   D_pitch_sp = pitch_des_local + 0.3 * coeroll * roll_des;
 
-  Bail1_scaled = 0.4 * coeroll * roll_PID - 0.50 * coeab * Phiab_PID +
+  B_ail1_scaled = 0.4 * coeroll * roll_PID - 0.50 * coeab * Phiab_PID +
                  0.2 * coeac * Phiac_PID - 0.65 * coebd * Phibd_PID +
                  0.05 * coece * Phice_PID - 0.41 * coedf * Phidf_PID +
                  0.01 * coeeg * Phieg_PID;
-  Bail2_scaled = 0.23 * coeroll * roll_PID - 0.83 * coeab * Phiab_PID +
+  B_ail2_scaled = 0.23 * coeroll * roll_PID - 0.83 * coeab * Phiab_PID +
                  0.47 * coeac * Phiac_PID - 0.57 * coebd * Phibd_PID +
                  0.17 * coece * Phice_PID - 0.27 * coedf * Phidf_PID +
                  0.08 * coeeg * Phieg_PID;
-  Bthro_scaled = thro_des - 0.8 * yaw_PID;
-  Brudd_scaled = yaw_PID;
+  B_thro_scaled = thro_des - 0.8 * yaw_PID;
+  B_rudd_scaled = yaw_PID;
   B_pitch_sp = pitch_des_local + 0.15 * coeroll * roll_des;
 
-  Aail1_scaled = 0.1 * coeroll * roll_PID - 0.89 * coeab * Phiab_PID +
+  A_ail1_scaled = 0.1 * coeroll * roll_PID - 0.89 * coeab * Phiab_PID +
                  0.70 * coeac * Phiac_PID - 0.46 * coebd * Phibd_PID +
                  0.31 * coece * Phice_PID - 0.18 * coedf * Phidf_PID +
                  0.14 * coeeg * Phieg_PID;
-  Aail2_scaled = -0.1 * coeroll * roll_PID - 0.70 * coeab * Phiab_PID +
+  A_ail2_scaled = -0.1 * coeroll * roll_PID - 0.70 * coeab * Phiab_PID +
                  0.89 * coeac * Phiac_PID - 0.31 * coebd * Phibd_PID +
                  0.46 * coece * Phice_PID - 0.14 * coedf * Phidf_PID +
                  0.18 * coeeg * Phieg_PID;
-  Aele_scaled = pitch_PID;
-  Athro_scaled = thro_des;
-  Arudd_scaled = yaw_PID;
+  A_ele_scaled = pitch_PID;
+  A_thro_scaled = thro_des;
+  A_rudd_scaled = yaw_PID;
 
-  Cail1_scaled = -0.23 * coeroll * roll_PID - 0.47 * coeab * Phiab_PID +
+  C_ail1_scaled = -0.23 * coeroll * roll_PID - 0.47 * coeab * Phiab_PID +
                  0.83 * coeac * Phiac_PID - 0.17 * coebd * Phibd_PID +
                  0.57 * coece * Phice_PID - 0.08 * coedf * Phidf_PID +
                  0.27 * coeeg * Phieg_PID;
-  Cail2_scaled = -0.4 * coeroll * roll_PID - 0.2 * coeab * Phiab_PID +
+  C_ail2_scaled = -0.4 * coeroll * roll_PID - 0.2 * coeab * Phiab_PID +
                  0.50 * coeac * Phiac_PID - 0.05 * coebd * Phibd_PID +
                  0.65 * coece * Phice_PID - 0.01 * coedf * Phidf_PID +
                  0.41 * coeeg * Phieg_PID;
-  Cthro_scaled = thro_des + 0.8 * yaw_PID;
-  Crudd_scaled = yaw_PID;
+  C_thro_scaled = thro_des + 0.8 * yaw_PID;
+  C_rudd_scaled = yaw_PID;
   C_pitch_sp = pitch_des_local - 0.15 * coeroll * roll_des;
 
-  Eail1_scaled = -0.55 * coeroll * roll_PID + 0.06 * coeab * Phiab_PID +
+  E_ail1_scaled = -0.55 * coeroll * roll_PID + 0.06 * coeab * Phiab_PID +
                  coeac * 0.12 * Phiac_PID + 0.07 * coebd * Phibd_PID +
                  0.44 * coece * Phice_PID + 0.05 * coedf * Phidf_PID +
                  0.41 * coeeg * Phieg_PID;
-  Eail2_scaled = -0.72 * coeroll * roll_PID + 0.32 * coeab * Phiab_PID -
+  E_ail2_scaled = -0.72 * coeroll * roll_PID + 0.32 * coeab * Phiab_PID -
                  0.31 * coeac * Phiac_PID + 0.21 * coebd * Phibd_PID -
                  0.06 * coece * Phice_PID + 0.12 * coedf * Phidf_PID +
                  0.27 * coeeg * Phieg_PID;
-  Ethro_scaled = 0.92 * thro_des + 1.0 * yaw_PID;
-  Erudd_scaled = yaw_PID;
+  E_thro_scaled = 0.92 * thro_des + 1.0 * yaw_PID;
+  E_rudd_scaled = yaw_PID;
   E_pitch_sp = pitch_des_local - 0.3 * coeroll * roll_des;
 
-  Gail1_scaled = -0.87 * coeroll * roll_PID + 0.56 * coeab * Phiab_PID -
+  G_ail1_scaled = -0.87 * coeroll * roll_PID + 0.56 * coeab * Phiab_PID -
                  coeac * 0.69 * Phiac_PID + 0.33 * coebd * Phibd_PID -
                  0.54 * coece * Phice_PID + 0.18 * coedf * Phidf_PID -
                  0.19 * coeeg * Phieg_PID;
-  Gail2_scaled = -1.0 * coeroll * roll_PID + 0.77 * coeab * Phiab_PID -
+  G_ail2_scaled = -1.0 * coeroll * roll_PID + 0.77 * coeab * Phiab_PID -
                  1.0 * coeac * Phiac_PID + 0.44 * coebd * Phibd_PID -
                  1.0 * coece * Phice_PID + 0.24 * coedf * Phidf_PID -
                  1.0 * coeeg * Phieg_PID;
-  Gthro_scaled = 0.85 * thro_des + 1.5 * yaw_PID;
-  Grudd_scaled = yaw_PID;
+  G_thro_scaled = 0.85 * thro_des + 1.5 * yaw_PID;
+  G_rudd_scaled = yaw_PID;
   G_pitch_sp = pitch_des_local - 0.5 * coeroll * roll_des;
 
 #endif
 
 #endif
 
-  s6_command_scaled = 0;
-  s7_command_scaled = 0;
+  // s6_command_scaled = 0;
+  // s7_command_scaled = 0;
 }
 
 
@@ -2044,7 +2044,7 @@ void controlFlapMotion() {
   integral_Phice_RATE_prev_il = integral_Phice_RATE_il;
   integral_Phidf_RATE_prev_il = integral_Phidf_RATE_il;
   integral_Phieg_RATE_prev_il = integral_Phieg_RATE_il;
-  relativeAngle_ready_prev = relativeAngle_ready;
+  // relativeAngle_ready_prev = relativeAngle_ready;
 }
 
 // 上电时把遥控通道 1～6 初始化为预设安全 PWM。

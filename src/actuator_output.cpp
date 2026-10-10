@@ -11,12 +11,12 @@
 
 // A* 为本机最终物理 PWM；B～G 的旧 *_PWM 名称表示待发送控制偏移（μs），不含中位/rev/trim。
 float ail1_PWM, ail2_PWM, ele_PWM, thro_PWM, rudd_PWM;
-float Bail1_PWM, Bail2_PWM, Bthro_PWM, Brudd_PWM;
-float Cail1_PWM, Cail2_PWM, Cthro_PWM, Crudd_PWM;
-float Dail1_PWM, Dail2_PWM, Dthro_PWM, Drudd_PWM;
-float Eail1_PWM, Eail2_PWM, Ethro_PWM, Erudd_PWM;
-float Fail1_PWM, Fail2_PWM, Fthro_PWM, Frudd_PWM;
-float Gail1_PWM, Gail2_PWM, Gthro_PWM, Grudd_PWM;
+float B_ail1_PWM, B_ail2_PWM, B_thro_PWM, B_rudd_PWM;
+float C_ail1_PWM, C_ail2_PWM, C_thro_PWM, C_rudd_PWM;
+float D_ail1_PWM, D_ail2_PWM, D_thro_PWM, D_rudd_PWM;
+float E_ail1_PWM, E_ail2_PWM, E_thro_PWM, E_rudd_PWM;
+float F_ail1_PWM, F_ail2_PWM, F_thro_PWM, F_rudd_PWM;
+float G_ail1_PWM, G_ail2_PWM, G_thro_PWM, G_rudd_PWM;
 float B_ele_command_PWM_Manual, B_ele_command_PWM_FF;
 float C_ele_command_PWM_Manual, C_ele_command_PWM_FF;
 float D_ele_command_PWM_Manual, D_ele_command_PWM_FF;
@@ -26,20 +26,20 @@ float G_ele_command_PWM_Manual, G_ele_command_PWM_FF;
 
 namespace {
 // 缩放后的逻辑控制量（μs 尺度，以 1500 为逻辑零点）。
-float Aail1_control_us, Aail2_control_us, Aele_control_us,
-    Athro_control_us, Arudd_control_us;
-float Bail1_control_us, Bail2_control_us, Bthro_control_us,
-    Brudd_control_us, B_ele_control_us_manual;
-float Cail1_control_us, Cail2_control_us, Cthro_control_us,
-    Crudd_control_us, C_ele_control_us_manual;
-float Dail1_control_us, Dail2_control_us, Dthro_control_us,
-    Drudd_control_us, D_ele_control_us_manual;
-float Eail1_control_us, Eail2_control_us, Ethro_control_us,
-    Erudd_control_us, E_ele_control_us_manual;
-float Fail1_control_us, Fail2_control_us, Fthro_control_us,
-    Frudd_control_us, F_ele_control_us_manual;
-float Gail1_control_us, Gail2_control_us, Gthro_control_us,
-    Grudd_control_us, G_ele_control_us_manual;
+float A_ail1_control_us, A_ail2_control_us, A_ele_control_us,
+    A_thro_control_us, A_rudd_control_us;
+float B_ail1_control_us, B_ail2_control_us, B_thro_control_us,
+    B_rudd_control_us, B_ele_control_us_manual;
+float C_ail1_control_us, C_ail2_control_us, C_thro_control_us,
+    C_rudd_control_us, C_ele_control_us_manual;
+float D_ail1_control_us, D_ail2_control_us, D_thro_control_us,
+    D_rudd_control_us, D_ele_control_us_manual;
+float E_ail1_control_us, E_ail2_control_us, E_thro_control_us,
+    E_rudd_control_us, E_ele_control_us_manual;
+float F_ail1_control_us, F_ail2_control_us, F_thro_control_us,
+    F_rudd_control_us, F_ele_control_us_manual;
+float G_ail1_control_us, G_ail2_control_us, G_thro_control_us,
+    G_rudd_control_us, G_ele_control_us_manual;
 // 本地俯仰控制产生的物理 PWM，尚未叠加上级前馈或手动覆盖。
 float localElevatorBasePWM;
 float localElevatorControlDeviation;
@@ -59,8 +59,8 @@ const int servo2Pin = 3; // 右副翼
 const int servo3Pin = 4; // 升降
 const int servo4Pin = 5; // 油门
 const int servo5Pin = 6; // 方向
-const int servo6Pin = 9;
-const int servo7Pin = 9;
+// const int servo6Pin = 9;
+// const int servo7Pin = 9;
 
 // 舵机或电调 PWM 输出对象。
 Servo servo1;
@@ -68,8 +68,8 @@ Servo servo2;
 Servo servo3;
 Servo servo4;
 Servo servo5;
-Servo servo6;
-Servo servo7;
+// Servo servo6;
+// Servo servo7;
 
 // 在指定硬件版本上电阶段将 5 号引脚写为低，并延时等待执行器供电稳定。
 void prepareActuatorPower() {
@@ -80,91 +80,90 @@ void prepareActuatorPower() {
 #endif
 }
 
-// 绑定各舵机和电调引脚，配置 900～2100 μs 的输出脉宽范围。
+// 绑定各舵机和电调引脚，配置独立于各通道软件限幅的驱动脉宽范围。
 void attachActuators() {
   // 指定各路执行器的有效脉宽范围，单位 μs。
-  servo1.attach(servo1Pin, 900, 2100);// 左副翼
-  servo2.attach(servo2Pin, 900, 2100);// 右副翼
-  servo3.attach(servo3Pin, 900, 2100);// 升降
-  servo4.attach(servo4Pin, 900, 2100);// 油门
-  servo5.attach(servo5Pin, 900, 2100);// 方向
-  servo6.attach(servo6Pin, 900, 2100);
-  servo7.attach(servo7Pin, 900, 2100);
+  servo1.attach(servo1Pin, PWM_SERVO_ATTACH_MIN_US, PWM_SERVO_ATTACH_MAX_US);// 左副翼
+  servo2.attach(servo2Pin, PWM_SERVO_ATTACH_MIN_US, PWM_SERVO_ATTACH_MAX_US);// 右副翼
+  servo3.attach(servo3Pin, PWM_SERVO_ATTACH_MIN_US, PWM_SERVO_ATTACH_MAX_US);// 升降
+  servo4.attach(servo4Pin, PWM_SERVO_ATTACH_MIN_US, PWM_SERVO_ATTACH_MAX_US);// 油门
+  servo5.attach(servo5Pin, PWM_SERVO_ATTACH_MIN_US, PWM_SERVO_ATTACH_MAX_US);// 方向
+  // servo6.attach(servo6Pin, 1000, 2000);
+  // servo7.attach(servo7Pin, 1000, 2000);
 
   commandSafeActuatorPositions();
 }
 
 // 上电和锁定时的固定物理位置，不应用 rev 或控制量。
 void commandSafeActuatorPositions() {
-  servo1.writeMicroseconds(lockedActuatorPwm(pwm_channel1_trim));
-  servo2.writeMicroseconds(lockedActuatorPwm(pwm_channel2_trim));
-  servo3.writeMicroseconds(lockedActuatorPwm(pwm_channel3_trim));
-  servo4.writeMicroseconds(lockedActuatorPwm(pwm_channel4_trim));
-  servo5.writeMicroseconds(lockedActuatorPwm(pwm_channel5_trim));
-  servo6.writeMicroseconds(PWM_SERVO_MIN_US);
-  servo7.writeMicroseconds(PWM_SERVO_MIN_US);
+  servo1.writeMicroseconds(PWM_CENTER_US + pwm_channel1_trim);
+  servo2.writeMicroseconds(PWM_CENTER_US + pwm_channel2_trim);
+  servo3.writeMicroseconds(PWM_CENTER_US + pwm_channel3_trim);
+  servo4.writeMicroseconds(PWM_CENTER_US + pwm_channel4_trim);
+  servo5.writeMicroseconds(PWM_CENTER_US + pwm_channel5_trim);
 }
 
 // 将归一化控制指令转换为微秒尺度的逻辑 PWM；此阶段尚未应用 rev 或 trim。
 void convertControlCommandsToPWM() {
   // *_control_us 以 1500 为逻辑零点，不是最终物理 PWM。
   // 对输出做行程限幅，避免超过执行器允许范围。
-  Aail1_control_us = PWM_CENTER_US + 1000 * (Aail1_scaled);
-  Aail2_control_us = PWM_CENTER_US + 1000 * (Aail2_scaled);
-  Aele_control_us = PWM_CENTER_US + 1000 * (Aele_scaled);
-  Athro_control_us = PWM_CENTER_US + 1000 * (Athro_scaled);
-  Arudd_control_us = PWM_CENTER_US + 1000 * (Arudd_scaled);
+  A_ail1_control_us = PWM_CENTER_US + 1000 * (A_ail1_scaled);
+  A_ail2_control_us = PWM_CENTER_US + 1000 * (A_ail2_scaled);
+  A_ele_control_us = PWM_CENTER_US + 1000 * (A_ele_scaled);
+  A_thro_control_us = PWM_CENTER_US + 1000 * (A_thro_scaled);
+  A_rudd_control_us = PWM_CENTER_US + 1000 * (A_rudd_scaled);
 
-  Bail1_control_us = PWM_CENTER_US + 1000 * (Bail1_scaled);
-  Bail2_control_us = PWM_CENTER_US + 1000 * (Bail2_scaled);
-  Bthro_control_us = PWM_CENTER_US + 1000 * (Bthro_scaled);
-  Brudd_control_us = PWM_CENTER_US + 1000 * (Brudd_scaled);
-  B_ele_control_us_manual = PWM_CENTER_US + 1000 * (Aele_scaled) +
-                             0.5 * 1000 * (Bail1_scaled + Bail2_scaled) / 2;
+  B_ail1_control_us = PWM_CENTER_US + 1000 * (B_ail1_scaled);
+  B_ail2_control_us = PWM_CENTER_US + 1000 * (B_ail2_scaled);
+  B_thro_control_us = PWM_CENTER_US + 1000 * (B_thro_scaled);
+  B_rudd_control_us = PWM_CENTER_US + 1000 * (B_rudd_scaled);
+  B_ele_control_us_manual = PWM_CENTER_US + 1000 * (A_ele_scaled) +
+                             0.5 * 1000 * (B_ail1_scaled + B_ail2_scaled) / 2;
 
-  Cail1_control_us = PWM_CENTER_US + 1000 * (Cail1_scaled);
-  Cail2_control_us = PWM_CENTER_US + 1000 * (Cail2_scaled);
-  Cthro_control_us = PWM_CENTER_US + 1000 * (Cthro_scaled);
-  Crudd_control_us = PWM_CENTER_US + 1000 * (Crudd_scaled);
-  C_ele_control_us_manual = PWM_CENTER_US + 1000 * (Aele_scaled) +
-                             0.5 * 1000 * (Cail1_scaled + Cail2_scaled) / 2;
+  C_ail1_control_us = PWM_CENTER_US + 1000 * (C_ail1_scaled);
+  C_ail2_control_us = PWM_CENTER_US + 1000 * (C_ail2_scaled);
+  C_thro_control_us = PWM_CENTER_US + 1000 * (C_thro_scaled);
+  C_rudd_control_us = PWM_CENTER_US + 1000 * (C_rudd_scaled);
+  C_ele_control_us_manual = PWM_CENTER_US + 1000 * (A_ele_scaled) +
+                             0.5 * 1000 * (C_ail1_scaled + C_ail2_scaled) / 2;
 
-  Dail1_control_us = PWM_CENTER_US + 1000 * (Dail1_scaled);
-  Dail2_control_us = PWM_CENTER_US + 1000 * (Dail2_scaled);
-  Dthro_control_us = PWM_CENTER_US + 1000 * (Dthro_scaled);
-  Drudd_control_us = PWM_CENTER_US + 1000 * (Drudd_scaled);
-  D_ele_control_us_manual = PWM_CENTER_US + 1000 * (Aele_scaled) +
-                             0.5 * 1000 * (Dail1_scaled + Dail2_scaled) / 2;
+  D_ail1_control_us = PWM_CENTER_US + 1000 * (D_ail1_scaled);
+  D_ail2_control_us = PWM_CENTER_US + 1000 * (D_ail2_scaled);
+  D_thro_control_us = PWM_CENTER_US + 1000 * (D_thro_scaled);
+  D_rudd_control_us = PWM_CENTER_US + 1000 * (D_rudd_scaled);
+  D_ele_control_us_manual = PWM_CENTER_US + 1000 * (A_ele_scaled) +
+                             0.5 * 1000 * (D_ail1_scaled + D_ail2_scaled) / 2;
 
-  Eail1_control_us = PWM_CENTER_US + 1000 * (Eail1_scaled);
-  Eail2_control_us = PWM_CENTER_US + 1000 * (Eail2_scaled);
-  Ethro_control_us = PWM_CENTER_US + 1000 * (Ethro_scaled);
-  Erudd_control_us = PWM_CENTER_US + 1000 * (Erudd_scaled);
-  E_ele_control_us_manual = PWM_CENTER_US + 1000 * (Aele_scaled) +
-                             0.5 * 1000 * (Eail1_scaled + Eail2_scaled) / 2;
+  E_ail1_control_us = PWM_CENTER_US + 1000 * (E_ail1_scaled);
+  E_ail2_control_us = PWM_CENTER_US + 1000 * (E_ail2_scaled);
+  E_thro_control_us = PWM_CENTER_US + 1000 * (E_thro_scaled);
+  E_rudd_control_us = PWM_CENTER_US + 1000 * (E_rudd_scaled);
+  E_ele_control_us_manual = PWM_CENTER_US + 1000 * (A_ele_scaled) +
+                             0.5 * 1000 * (E_ail1_scaled + E_ail2_scaled) / 2;
 
-  Fail1_control_us = PWM_CENTER_US + 1000 * (Fail1_scaled);
-  Fail2_control_us = PWM_CENTER_US + 1000 * (Fail2_scaled);
-  Fthro_control_us = PWM_CENTER_US + 1000 * (Fthro_scaled);
-  Frudd_control_us = PWM_CENTER_US + 1000 * (Frudd_scaled);
-  F_ele_control_us_manual = PWM_CENTER_US + 1000 * (Aele_scaled) +
-                             0.5 * 1000 * (Fail1_scaled + Fail2_scaled) / 2;
+  F_ail1_control_us = PWM_CENTER_US + 1000 * (F_ail1_scaled);
+  F_ail2_control_us = PWM_CENTER_US + 1000 * (F_ail2_scaled);
+  F_thro_control_us = PWM_CENTER_US + 1000 * (F_thro_scaled);
+  F_rudd_control_us = PWM_CENTER_US + 1000 * (F_rudd_scaled);
+  F_ele_control_us_manual = PWM_CENTER_US + 1000 * (A_ele_scaled) +
+                             0.5 * 1000 * (F_ail1_scaled + F_ail2_scaled) / 2;
 
-  Gail1_control_us = PWM_CENTER_US + 1000 * (Gail1_scaled);
-  Gail2_control_us = PWM_CENTER_US + 1000 * (Gail2_scaled);
-  Gthro_control_us = PWM_CENTER_US + 1000 * (Gthro_scaled);
-  Grudd_control_us = PWM_CENTER_US + 1000 * (Grudd_scaled);
-  G_ele_control_us_manual = PWM_CENTER_US + 1000 * (Aele_scaled) +
-                             0.5 * 1000 * (Gail1_scaled + Gail2_scaled) / 2;
+  G_ail1_control_us = PWM_CENTER_US + 1000 * (G_ail1_scaled);
+  G_ail2_control_us = PWM_CENTER_US + 1000 * (G_ail2_scaled);
+  G_thro_control_us = PWM_CENTER_US + 1000 * (G_thro_scaled);
+  G_rudd_control_us = PWM_CENTER_US + 1000 * (G_rudd_scaled);
+  G_ele_control_us_manual = PWM_CENTER_US + 1000 * (A_ele_scaled) +
+                             0.5 * 1000 * (G_ail1_scaled + G_ail2_scaled) / 2;
 
-  s6_command_PWM = s6_command_scaled * 180;
-  s7_command_PWM = s7_command_scaled * 180;
+  // s6_command_PWM = s6_command_scaled * 180;
+  // s7_command_PWM = s7_command_scaled * 180;
+
   // 保留原有逻辑控制量行程限制。
-  // Aail1_control_us = constrain(Aail1_control_us, PWM_SURFACE_MIN_US, PWM_SURFACE_MAX_US);
-  // Aail2_control_us = constrain(Aail2_control_us, PWM_SURFACE_MIN_US, PWM_SURFACE_MAX_US);
-  // Aele_control_us = constrain(Aele_control_us, PWM_SURFACE_MIN_US, PWM_SURFACE_MAX_US); // 贵的飞机限幅
-  // Athro_control_us = constrain(Athro_control_us, 1000, 2000);
-  // Arudd_control_us = constrain(Arudd_control_us, PWM_SURFACE_MIN_US, PWM_SURFACE_MAX_US);
+  // A_ail1_control_us = constrain(A_ail1_control_us, PWM_SURFACE_MIN_US, PWM_SURFACE_MAX_US);
+  // A_ail2_control_us = constrain(A_ail2_control_us, PWM_SURFACE_MIN_US, PWM_SURFACE_MAX_US);
+  // A_ele_control_us = constrain(A_ele_control_us, PWM_SURFACE_MIN_US, PWM_SURFACE_MAX_US); // 贵的飞机限幅
+  // A_thro_control_us = constrain(A_thro_control_us, 1000, 2000);
+  // A_rudd_control_us = constrain(A_rudd_control_us, PWM_SURFACE_MIN_US, PWM_SURFACE_MAX_US);
   // s6_command_PWM = constrain(s6_command_PWM, 0, 180);
   // s7_command_PWM = constrain(s7_command_PWM, 0, 180);
 }
@@ -176,10 +175,10 @@ void prepareActuatorCommands() {
   // 准备各机控制偏移；本机补偿、rev/trim 在下方共同应用。
 
   // A机
-  int deviation1 = (Aail1_control_us - PWM_CENTER_US) * 0.4;
-  int deviation2 = (Aail2_control_us - PWM_CENTER_US) * 0.4;
-  int deviation4 = Athro_control_us - PWM_CENTER_US;
-  int deviation5 = Arudd_control_us - PWM_CENTER_US;
+  int deviation1 = (A_ail1_control_us - PWM_CENTER_US) * 0.4;
+  int deviation2 = (A_ail2_control_us - PWM_CENTER_US) * 0.4;
+  int deviation4 = A_thro_control_us - PWM_CENTER_US;
+  int deviation5 = A_rudd_control_us - PWM_CENTER_US;
 
   // 刹车量与副翼偏移使用相同的方向约定，在 rev 反向前叠加。
   if (channel_8_pwm > 1600) {
@@ -193,119 +192,119 @@ void prepareActuatorCommands() {
   Local_ail2_control_us = deviation2 + ailBrake_PWM;
   Local_thro_control_us = deviation4;
   Local_rudd_control_us = deviation5;
-  Local_ele_control_us = Aele_control_us - PWM_CENTER_US;
+  Local_ele_control_us = A_ele_control_us - PWM_CENTER_US;
   Local_ele_ff_control_us = 0;
 
   // B机
-  deviation1 = (Bail1_control_us - PWM_CENTER_US) * 0.4;
-  deviation2 = (Bail2_control_us - PWM_CENTER_US) * 0.4;
-  deviation4 = Bthro_control_us - PWM_CENTER_US;
-  deviation5 = Brudd_control_us - PWM_CENTER_US;
+  deviation1 = (B_ail1_control_us - PWM_CENTER_US) * 0.4;
+  deviation2 = (B_ail2_control_us - PWM_CENTER_US) * 0.4;
+  deviation4 = B_thro_control_us - PWM_CENTER_US;
+  deviation5 = B_rudd_control_us - PWM_CENTER_US;
 
-  Bail1_PWM = deviation1 + ailBrake_PWM;
-  Bail2_PWM = deviation2 + ailBrake_PWM;
-  Bthro_PWM = deviation4;
-  Brudd_PWM = deviation5;
+  B_ail1_PWM = deviation1 + ailBrake_PWM;
+  B_ail2_PWM = deviation2 + ailBrake_PWM;
+  B_thro_PWM = deviation4;
+  B_rudd_PWM = deviation5;
 
   B_ele_command_PWM_Manual = B_ele_control_us_manual - PWM_CENTER_US;
   B_ele_command_PWM_FF = B_ele_control_ff_us;
-  setLeftChildCommand(0, int(Bail1_PWM),
-                      int(Bail2_PWM), int(Bthro_PWM),
-                      int(Brudd_PWM), B_pitch_sp,
+  setLeftChildCommand(0, int(B_ail1_PWM),
+                      int(B_ail2_PWM), int(B_thro_PWM),
+                      int(B_rudd_PWM), B_pitch_sp,
                       int(B_ele_command_PWM_Manual),
                       int(B_ele_command_PWM_FF));
 
   // C机
-  deviation1 = (Cail1_control_us - PWM_CENTER_US) * 0.4;
-  deviation2 = (Cail2_control_us - PWM_CENTER_US) * 0.4;
-  deviation4 = Cthro_control_us - PWM_CENTER_US;
-  deviation5 = Crudd_control_us - PWM_CENTER_US;
+  deviation1 = (C_ail1_control_us - PWM_CENTER_US) * 0.4;
+  deviation2 = (C_ail2_control_us - PWM_CENTER_US) * 0.4;
+  deviation4 = C_thro_control_us - PWM_CENTER_US;
+  deviation5 = C_rudd_control_us - PWM_CENTER_US;
 
-  Cail1_PWM = deviation1 + ailBrake_PWM;
-  Cail2_PWM = deviation2 + ailBrake_PWM;
-  Cthro_PWM = deviation4;
-  Crudd_PWM = deviation5;
+  C_ail1_PWM = deviation1 + ailBrake_PWM;
+  C_ail2_PWM = deviation2 + ailBrake_PWM;
+  C_thro_PWM = deviation4;
+  C_rudd_PWM = deviation5;
 
   C_ele_command_PWM_Manual = C_ele_control_us_manual - PWM_CENTER_US;
   C_ele_command_PWM_FF = C_ele_control_ff_us;
-  setRightChildCommand(0, int(Cail1_PWM),
-                       int(Cail2_PWM), int(Cthro_PWM),
-                       int(Crudd_PWM), C_pitch_sp,
+  setRightChildCommand(0, int(C_ail1_PWM),
+                       int(C_ail2_PWM), int(C_thro_PWM),
+                       int(C_rudd_PWM), C_pitch_sp,
                        int(C_ele_command_PWM_Manual),
                        int(C_ele_command_PWM_FF));
   // D机
-  deviation1 = (Dail1_control_us - PWM_CENTER_US) * 0.4;
-  deviation2 = (Dail2_control_us - PWM_CENTER_US) * 0.4;
-  deviation4 = Dthro_control_us - PWM_CENTER_US;
-  deviation5 = Drudd_control_us - PWM_CENTER_US;
+  deviation1 = (D_ail1_control_us - PWM_CENTER_US) * 0.4;
+  deviation2 = (D_ail2_control_us - PWM_CENTER_US) * 0.4;
+  deviation4 = D_thro_control_us - PWM_CENTER_US;
+  deviation5 = D_rudd_control_us - PWM_CENTER_US;
 
-  Dail1_PWM = deviation1 + ailBrake_PWM;
-  Dail2_PWM = deviation2 + ailBrake_PWM;
-  Dthro_PWM = deviation4;
-  Drudd_PWM = deviation5;
+  D_ail1_PWM = deviation1 + ailBrake_PWM;
+  D_ail2_PWM = deviation2 + ailBrake_PWM;
+  D_thro_PWM = deviation4;
+  D_rudd_PWM = deviation5;
 
   D_ele_command_PWM_Manual = D_ele_control_us_manual - PWM_CENTER_US;
   D_ele_command_PWM_FF = D_ele_control_ff_us;
-  setLeftChildCommand(1, int(Dail1_PWM),
-                      int(Dail2_PWM), int(Dthro_PWM),
-                      int(Drudd_PWM), D_pitch_sp,
+  setLeftChildCommand(1, int(D_ail1_PWM),
+                      int(D_ail2_PWM), int(D_thro_PWM),
+                      int(D_rudd_PWM), D_pitch_sp,
                       int(D_ele_command_PWM_Manual),
                       int(D_ele_command_PWM_FF));
 
   // E机
-  deviation1 = (Eail1_control_us - PWM_CENTER_US) * 0.4;
-  deviation2 = (Eail2_control_us - PWM_CENTER_US) * 0.4;
-  deviation4 = Ethro_control_us - PWM_CENTER_US;
-  deviation5 = Erudd_control_us - PWM_CENTER_US;
+  deviation1 = (E_ail1_control_us - PWM_CENTER_US) * 0.4;
+  deviation2 = (E_ail2_control_us - PWM_CENTER_US) * 0.4;
+  deviation4 = E_thro_control_us - PWM_CENTER_US;
+  deviation5 = E_rudd_control_us - PWM_CENTER_US;
 
-  Eail1_PWM = deviation1 + ailBrake_PWM;
-  Eail2_PWM = deviation2 + ailBrake_PWM;
-  Ethro_PWM = deviation4;
-  Erudd_PWM = deviation5;
+  E_ail1_PWM = deviation1 + ailBrake_PWM;
+  E_ail2_PWM = deviation2 + ailBrake_PWM;
+  E_thro_PWM = deviation4;
+  E_rudd_PWM = deviation5;
 
   E_ele_command_PWM_Manual = E_ele_control_us_manual - PWM_CENTER_US;
   E_ele_command_PWM_FF = E_ele_control_ff_us;
-  setRightChildCommand(1, int(Eail1_PWM),
-                       int(Eail2_PWM), int(Ethro_PWM),
-                       int(Erudd_PWM), E_pitch_sp,
+  setRightChildCommand(1, int(E_ail1_PWM),
+                       int(E_ail2_PWM), int(E_thro_PWM),
+                       int(E_rudd_PWM), E_pitch_sp,
                        int(E_ele_command_PWM_Manual),
                        int(E_ele_command_PWM_FF));
 
   // F机
-  deviation1 = (Fail1_control_us - PWM_CENTER_US) * 0.4;
-  deviation2 = (Fail2_control_us - PWM_CENTER_US) * 0.4;
-  deviation4 = Fthro_control_us - PWM_CENTER_US;
-  deviation5 = Frudd_control_us - PWM_CENTER_US;
+  deviation1 = (F_ail1_control_us - PWM_CENTER_US) * 0.4;
+  deviation2 = (F_ail2_control_us - PWM_CENTER_US) * 0.4;
+  deviation4 = F_thro_control_us - PWM_CENTER_US;
+  deviation5 = F_rudd_control_us - PWM_CENTER_US;
 
-  Fail1_PWM = deviation1 + ailBrake_PWM;
-  Fail2_PWM = deviation2 + ailBrake_PWM;
-  Fthro_PWM = deviation4;
-  Frudd_PWM = deviation5;
+  F_ail1_PWM = deviation1 + ailBrake_PWM;
+  F_ail2_PWM = deviation2 + ailBrake_PWM;
+  F_thro_PWM = deviation4;
+  F_rudd_PWM = deviation5;
 
   F_ele_command_PWM_Manual = F_ele_control_us_manual - PWM_CENTER_US;
   F_ele_command_PWM_FF = F_ele_control_ff_us;
-  setLeftChildCommand(2, int(Fail1_PWM),
-                      int(Fail2_PWM), int(Fthro_PWM),
-                      int(Frudd_PWM), F_pitch_sp,
+  setLeftChildCommand(2, int(F_ail1_PWM),
+                      int(F_ail2_PWM), int(F_thro_PWM),
+                      int(F_rudd_PWM), F_pitch_sp,
                       int(F_ele_command_PWM_Manual),
                       int(F_ele_command_PWM_FF));
 
   // G机
-  deviation1 = (Gail1_control_us - PWM_CENTER_US) * 0.4;
-  deviation2 = (Gail2_control_us - PWM_CENTER_US) * 0.4;
-  deviation4 = Gthro_control_us - PWM_CENTER_US;
-  deviation5 = Grudd_control_us - PWM_CENTER_US;
+  deviation1 = (G_ail1_control_us - PWM_CENTER_US) * 0.4;
+  deviation2 = (G_ail2_control_us - PWM_CENTER_US) * 0.4;
+  deviation4 = G_thro_control_us - PWM_CENTER_US;
+  deviation5 = G_rudd_control_us - PWM_CENTER_US;
 
-  Gail1_PWM = deviation1 + ailBrake_PWM;
-  Gail2_PWM = deviation2 + ailBrake_PWM;
-  Gthro_PWM = deviation4;
-  Grudd_PWM = deviation5;
+  G_ail1_PWM = deviation1 + ailBrake_PWM;
+  G_ail2_PWM = deviation2 + ailBrake_PWM;
+  G_thro_PWM = deviation4;
+  G_rudd_PWM = deviation5;
 
   G_ele_command_PWM_Manual = G_ele_control_us_manual - PWM_CENTER_US;
   G_ele_command_PWM_FF = G_ele_control_ff_us;
-  setRightChildCommand(2, int(Gail1_PWM),
-                       int(Gail2_PWM), int(Gthro_PWM),
-                       int(Grudd_PWM), G_pitch_sp,
+  setRightChildCommand(2, int(G_ail1_PWM),
+                       int(G_ail2_PWM), int(G_thro_PWM),
+                       int(G_rudd_PWM), G_pitch_sp,
                        int(G_ele_command_PWM_Manual),
                        int(G_ele_command_PWM_FF));
 #endif
@@ -336,7 +335,7 @@ void prepareLocalElevatorCommand() {
   }
 #endif
   // 其他模式沿用 PID/手动混控的逻辑 PWM 到实际 PWM 的转换。
-  const int deviation = Aele_control_us - PWM_CENTER_US;
+  const int deviation = A_ele_control_us - PWM_CENTER_US;
   localElevatorControlDeviation = deviation;
   localElevatorBasePWM = PWM_CENTER_US + pwm_channel3_trim + pwm_channel3_rev * deviation;
 }
@@ -345,18 +344,19 @@ void prepareLocalElevatorCommand() {
 
 // 直接应用已准备好的物理 PWM，再发送或转发机间数据。
 void applyAndTransmitActuatorCommands() {
+  // 锁定时直接回到 trim 位置；仅解锁后的控制输出应用软件限幅。
   if (isFlightLocked()) {
-    ail1_PWM = lockedActuatorPwm(pwm_channel1_trim);
-    ail2_PWM = lockedActuatorPwm(pwm_channel2_trim);
-    ele_PWM = lockedActuatorPwm(pwm_channel3_trim);
-    thro_PWM = lockedActuatorPwm(pwm_channel4_trim);
-    rudd_PWM = lockedActuatorPwm(pwm_channel5_trim);
+    ail1_PWM = PWM_CENTER_US + pwm_channel1_trim;
+    ail2_PWM = PWM_CENTER_US + pwm_channel2_trim;
+    ele_PWM  = PWM_CENTER_US + pwm_channel3_trim;
+    thro_PWM = PWM_CENTER_US + pwm_channel4_trim;
+    rudd_PWM = PWM_CENTER_US + pwm_channel5_trim;
   } else {
-    ail1_PWM = limitActuatorPwm(ail1_PWM, lockedActuatorPwm(pwm_channel1_trim));
-    ail2_PWM = limitActuatorPwm(ail2_PWM, lockedActuatorPwm(pwm_channel2_trim));
-    ele_PWM = limitActuatorPwm(ele_PWM, lockedActuatorPwm(pwm_channel3_trim));
-    thro_PWM = limitActuatorPwm(thro_PWM, lockedActuatorPwm(pwm_channel4_trim));
-    rudd_PWM = limitActuatorPwm(rudd_PWM, lockedActuatorPwm(pwm_channel5_trim));
+    ail1_PWM = limitActuatorPwm(ail1_PWM, PWM_SERVO1_MIN_US, PWM_SERVO1_MAX_US, static_cast<int>(PWM_CENTER_US + pwm_channel1_trim));
+    ail2_PWM = limitActuatorPwm(ail2_PWM, PWM_SERVO2_MIN_US, PWM_SERVO2_MAX_US, static_cast<int>(PWM_CENTER_US + pwm_channel2_trim));
+    ele_PWM = limitActuatorPwm(ele_PWM, PWM_SERVO3_MIN_US, PWM_SERVO3_MAX_US, static_cast<int>(PWM_CENTER_US + pwm_channel3_trim));
+    thro_PWM = limitActuatorPwm(thro_PWM, PWM_SERVO4_MIN_US, PWM_SERVO4_MAX_US, static_cast<int>(PWM_CENTER_US + pwm_channel4_trim));
+    rudd_PWM = limitActuatorPwm(rudd_PWM, PWM_SERVO5_MIN_US, PWM_SERVO5_MAX_US, static_cast<int>(PWM_CENTER_US + pwm_channel5_trim));
   }
   servo1.writeMicroseconds(ail1_PWM);
   servo2.writeMicroseconds(ail2_PWM);

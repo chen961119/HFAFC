@@ -54,7 +54,7 @@ int Local_ail1_control_us, Local_ail2_control_us, Local_rudd_control_us,
     Local_ele_control_us, Local_ele_ff_control_us;
 float phiB_raw, phiC_raw, phiD_raw, phiE_raw, phiF_raw, phiG_raw;
 float thetaB_raw, thetaC_raw, thetaD_raw, thetaE_raw, thetaF_raw, thetaG_raw;
-int Bele_PWM, Cele_PWM, Dele_PWM, Eele_PWM, Fele_PWM, Gele_PWM;
+int B_ele_PWM, C_ele_PWM, D_ele_PWM, E_ele_PWM, F_ele_PWM, G_ele_PWM;
 float GYRO_X_B, GYRO_X_C, GYRO_X_D, GYRO_X_E, GYRO_X_F, GYRO_X_G;
 static unsigned long lastsendTime = 0;
 static unsigned long lastsendTimeQua = 0;
@@ -194,8 +194,8 @@ void sendGYROxANGLE() // 从机要做的
   THETAALL[1] = thetaD_raw;                // 听来的
   THETAALL[2] = thetaF_raw;                // 听来的
   ELEPWM[0] = ele_PWM; // 自己
-  ELEPWM[1] = Dele_PWM;                    // 听来的
-  ELEPWM[2] = Fele_PWM;                    // 听来的
+  ELEPWM[1] = D_ele_PWM;                    // 听来的
+  ELEPWM[2] = F_ele_PWM;                    // 听来的
 
 #elif defined CPLANE
   RelativeAngleAll[0] = relativeAngle_ready;
@@ -211,8 +211,8 @@ void sendGYROxANGLE() // 从机要做的
   THETAALL[1] = thetaE_raw;                // 听来的
   THETAALL[2] = thetaG_raw;                // 听来的
   ELEPWM[0] = ele_PWM; // 自己
-  ELEPWM[1] = Eele_PWM;                    // 听来的
-  ELEPWM[2] = Gele_PWM;                    // 听来的
+  ELEPWM[1] = E_ele_PWM;                    // 听来的
+  ELEPWM[2] = G_ele_PWM;                    // 听来的
 
 #elif defined DPLANE
   RelativeAngleAll[0] = 0.0;
@@ -229,7 +229,7 @@ void sendGYROxANGLE() // 从机要做的
   THETAALL[2] = thetaF_raw;                // 自己
   ELEPWM[0] = 0;                           //
   ELEPWM[1] = ele_PWM; // 自己的
-  ELEPWM[2] = Fele_PWM;                    // 听来的
+  ELEPWM[2] = F_ele_PWM;                    // 听来的
 #elif defined EPLANE
   RelativeAngleAll[0] = 0.0;
   RelativeAngleAll[1] = relativeAngle_ready;
@@ -245,7 +245,7 @@ void sendGYROxANGLE() // 从机要做的
   THETAALL[2] = thetaG_raw;                // 自己
   ELEPWM[0] = 0;                           //
   ELEPWM[1] = ele_PWM; // 自己的
-  ELEPWM[2] = Gele_PWM;                    // 听来的
+  ELEPWM[2] = G_ele_PWM;                    // 听来的
 #elif defined FPLANE
   RelativeAngleAll[0] = 0.0;
   RelativeAngleAll[1] = 0.0;
@@ -744,9 +744,9 @@ void getGYROxANGLEleft() {
         thetaB_raw = theta_raw[0];
         thetaD_raw = theta_raw[1];
         thetaF_raw = theta_raw[2];
-        Bele_PWM = ele_pwm[0];
-        Dele_PWM = ele_pwm[1];
-        Fele_PWM = ele_pwm[2];
+        B_ele_PWM = ele_pwm[0];
+        D_ele_PWM = ele_pwm[1];
+        F_ele_PWM = ele_pwm[2];
       }
     }
   }
@@ -836,9 +836,9 @@ void getGYROxANGLEright() {
         thetaC_raw = theta_raw[0];
         thetaE_raw = theta_raw[1];
         thetaG_raw = theta_raw[2];
-        Cele_PWM = ele_pwm[0];
-        Eele_PWM = ele_pwm[1];
-        Gele_PWM = ele_pwm[2];
+        C_ele_PWM = ele_pwm[0];
+        E_ele_PWM = ele_pwm[1];
+        G_ele_PWM = ele_pwm[2];
       }
     }
   }

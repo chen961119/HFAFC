@@ -10,6 +10,7 @@ CoFly Autopilot 的英文全称为 **Collaborative Distributed Autopilot**，中
 | [固件指南](firmware-guide.md) | 编译配置、PWM、传感器、硬件接线及级联协议 |
 | [软件需求](requirements.md) | 功能与安全目标、唯一需求编号和验收矩阵 |
 | [参数软件](../tools/parameter_console/README.md) | USB 参数配置、协议、SD 恢复与测试 |
+| [飞行数据浏览器](../tools/flight_data_browser/README.md) | SD 日志读取、多机曲线对比、FFT 与数据导出 |
 | [板上调试](../tools/teensy_debug/README.md) | TeensyDebug 环境与 VS Code 使用说明 |
 | [参数板上测试记录](../tools/parameter_console/BOARD_TEST_REPORT.md) | 2026-10-07 测试范围与结果 |
 

@@ -16,7 +16,7 @@ extern int Local_ail1_control_us, Local_ail2_control_us, Local_thro_control_us, 
 extern float phiB_raw, phiC_raw, phiD_raw, phiE_raw, phiF_raw, phiG_raw;
 extern float thetaB_raw, thetaC_raw, thetaD_raw, thetaE_raw, thetaF_raw,
     thetaG_raw;
-extern int Bele_PWM, Cele_PWM, Dele_PWM, Eele_PWM, Fele_PWM, Gele_PWM;
+extern int B_ele_PWM, C_ele_PWM, D_ele_PWM, E_ele_PWM, F_ele_PWM, G_ele_PWM;
 extern float GYRO_X_B, GYRO_X_C, GYRO_X_D, GYRO_X_E, GYRO_X_F, GYRO_X_G;
 
 void beginParentLink();

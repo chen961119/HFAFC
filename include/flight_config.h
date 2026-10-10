@@ -2,28 +2,46 @@
 
 // PWM 逻辑中位统一为 1500 μs；机械中位由各路 trim 修正。
 constexpr int PWM_CENTER_US = 1500;
-// Servo.attach 的物理脉宽范围；五路执行器统一限幅。
-constexpr int PWM_SERVO_MIN_US = 900;
-constexpr int PWM_SERVO_MAX_US = 2100;
-// 保留原有中位上下的逻辑行程，换基准后限幅为 1080～1900 μs。
-// constexpr int PWM_SURFACE_MIN_US = PWM_CENTER_US - 420;
-// constexpr int PWM_SURFACE_MAX_US = PWM_CENTER_US + 400;
+
+constexpr int PWM_SERVO1_MIN_US = 1000; // 左副翼
+constexpr int PWM_SERVO1_MAX_US = 2000;
+constexpr int PWM_SERVO2_MIN_US = 1000; // 右副翼
+constexpr int PWM_SERVO2_MAX_US = 2000;
+constexpr int PWM_SERVO3_MIN_US = 1000; // 升降
+constexpr int PWM_SERVO3_MAX_US = 2000;
+constexpr int PWM_SERVO4_MIN_US = 1000; // 油门
+constexpr int PWM_SERVO4_MAX_US = 2000;
+constexpr int PWM_SERVO5_MIN_US = 1000; // 方向
+constexpr int PWM_SERVO5_MAX_US = 2000;
+
+// 驱动范围独立于软件限幅，覆盖全部合法锁定位置（1500 + trim）。
+constexpr int PWM_SERVO_ATTACH_MIN_US = 1000;
+constexpr int PWM_SERVO_ATTACH_MAX_US = 2000;
+constexpr bool validActuatorPwmLimits(int minimum, int maximum) {
+  return PWM_SERVO_ATTACH_MIN_US <= minimum && minimum <= maximum &&
+         maximum <= PWM_SERVO_ATTACH_MAX_US;
+}
+static_assert(validActuatorPwmLimits(PWM_SERVO1_MIN_US, PWM_SERVO1_MAX_US), "Invalid channel 1 PWM limits");
+static_assert(validActuatorPwmLimits(PWM_SERVO2_MIN_US, PWM_SERVO2_MAX_US), "Invalid channel 2 PWM limits");
+static_assert(validActuatorPwmLimits(PWM_SERVO3_MIN_US, PWM_SERVO3_MAX_US), "Invalid channel 3 PWM limits");
+static_assert(validActuatorPwmLimits(PWM_SERVO4_MIN_US, PWM_SERVO4_MAX_US), "Invalid channel 4 PWM limits");
+static_assert(validActuatorPwmLimits(PWM_SERVO5_MIN_US, PWM_SERVO5_MAX_US), "Invalid channel 5 PWM limits");
 
 // 只启用一个机体编号；物理串联顺序为 F-D-B-A-C-E-G。
-// #define APLANE
+#define APLANE
 // #define BPLANE
 // #define CPLANE
 // #define DPLANE
 // #define EPLANE
-#define FPLANE
+// #define FPLANE
 // #define GPLANE
 
 #define TESTINDI
 
-// #define THREEPLANE
+#define THREEPLANE
 // #define FOURPLANE
 // #define FIVEPLANE
-#define SEVENPLANE
+// #define SEVENPLANE
 
 // #define userotatesensor
 #define expensive

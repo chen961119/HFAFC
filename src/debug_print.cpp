@@ -147,20 +147,20 @@ void printMotorCommands() {
 void printServoCommands() {
   if (current_time - print_counter > 10000) {
     print_counter = micros();
-    USBSerial.print(F("Aail1:"));
+    USBSerial.print(F("A_ail1:"));
     USBSerial.print(ail1_PWM);
-    USBSerial.print(F(" Aail2:"));
+    USBSerial.print(F(" A_ail2:"));
     USBSerial.print(ail2_PWM);
-    USBSerial.print(F(" Aele:"));
+    USBSerial.print(F(" A_ele:"));
     USBSerial.print(ele_PWM);
-    USBSerial.print(F(" Athro:"));
+    USBSerial.print(F(" A_thro:"));
     USBSerial.print(thro_PWM);
-    USBSerial.print(F(" Arudd:"));
+    USBSerial.print(F(" A_rudd:"));
     USBSerial.print(rudd_PWM);
-    USBSerial.print(F(" s6_command:"));
-    USBSerial.print(s6_command_PWM);
-    USBSerial.print(F(" s7_command:"));
-    USBSerial.println(s7_command_PWM);
+    // USBSerial.print(F(" s6_command:"));
+    // USBSerial.print(s6_command_PWM);
+    // USBSerial.print(F(" s7_command:"));
+    // USBSerial.println(s7_command_PWM);
   }
 }
 
