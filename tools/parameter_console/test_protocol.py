@@ -27,9 +27,9 @@ class ProtocolTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate_edit(direction, "0")
     def test_split_replies_mixed_with_logs(self):
-        wire = ("1111\n调试日志\n@HFAFC\t3\tBEGIN\tF-TEAM-7-INDI-EXP\t1\tSD_READY\tLOADED\r\n"
-                "@HFAFC\t3\tVALUE\tKp_roll_angle\t0.25\t0\t10\tAttitude\tRoll P\n"
-                "noise\n@HFAFC\t3\tEND\t1\n").encode()
+        wire = ("1111\n调试日志\n@COFLY\t3\tBEGIN\tF-TEAM-7-INDI-EXP\t1\tSD_READY\tLOADED\r\n"
+                "@COFLY\t3\tVALUE\tKp_roll_angle\t0.25\t0\t10\tAttitude\tRoll P\n"
+                "noise\n@COFLY\t3\tEND\t1\n").encode()
         for size in (1, 2, 7, 256, 4096):
             framer = ReplyFramer()
             replies = []
@@ -40,8 +40,8 @@ class ProtocolTests(unittest.TestCase):
 
     def test_bad_frames_and_long_log_do_not_break_following_reply(self):
         framer = ReplyFramer()
-        self.assertFalse(framer.feed(b"x" * 4096 + b"\n@HFAFC\t4294967296\tEND\t1\n"))
-        self.assertEqual(framer.feed(b"@HFAFC\t4\tEND\t1\n"), [(4, "END", ["1"])])
+        self.assertFalse(framer.feed(b"x" * 4096 + b"\n@COFLY\t4294967296\tEND\t1\n"))
+        self.assertEqual(framer.feed(b"@COFLY\t4\tEND\t1\n"), [(4, "END", ["1"])])
 
     def test_parameter_validation(self):
         parameter = Parameter("gain", 0.25, 0, 10, "Attitude", "P")

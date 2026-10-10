@@ -1,12 +1,12 @@
 #include "firmware_debug.h"
 
-#if defined(HFAFC_TEENSY_DEBUG)
+#if defined(COFLY_TEENSY_DEBUG)
 #include "serial_ports.h"
 #include <TeensyDebug.h>
 #endif
 
 void initializeFirmwareDebug() {
-#if defined(HFAFC_TEENSY_DEBUG)
+#if defined(COFLY_TEENSY_DEBUG)
   DebugSerial.begin(921600);
   // GDB 打开 USB 串口后再初始化，确保 USB 已完成枚举。
   while (!DebugSerial) {

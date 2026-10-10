@@ -53,20 +53,20 @@ class MockFlightController:
                     parts = line.decode().split()
                     if parts[:2] == ["PARAM", "READ"]:
                         request_id = parts[2]
-                        reply = (f"普通日志：1111\n@HFAFC\t{request_id}\tBEGIN\tF-TEAM-7-INDI-EXP\t1\tSD_READY\tLOADED\n"
-                                 f"@HFAFC\t{request_id}\tVALUE\tKp_roll_angle\t{self.value}\t0\t10\tAttitude\tRoll P\n"
-                                 f"@HFAFC\t{request_id}\tEND\t1\n").encode()
+                        reply = (f"普通日志：1111\n@COFLY\t{request_id}\tBEGIN\tF-TEAM-7-INDI-EXP\t1\tSD_READY\tLOADED\n"
+                                 f"@COFLY\t{request_id}\tVALUE\tKp_roll_angle\t{self.value}\t0\t10\tAttitude\tRoll P\n"
+                                 f"@COFLY\t{request_id}\tEND\t1\n").encode()
                         # Split inside UTF-8 characters and parameter fields.
                         for i in range(0, len(reply), 7):
                             self.connection.sendall(reply[i:i + 7])
                     elif parts[:2] == ["PARAM", "SET"]:
                         if abs(float(parts[4]) - 0.9) < 1e-6:
-                            reply = f"@HFAFC\t{parts[2]}\tERROR\tSD_WRITE\tRAM unchanged\n"
+                            reply = f"@COFLY\t{parts[2]}\tERROR\tSD_WRITE\tRAM unchanged\n"
                         elif abs(float(parts[4]) - 0.8) < 1e-6:
                             continue  # Lost confirmation: exercise timeout UI.
                         else:
                             self.value = parts[4]
-                            reply = f"@HFAFC\t{parts[2]}\tOK\tKp_roll_angle\t{self.value}\tSAVED\n"
+                            reply = f"@COFLY\t{parts[2]}\tOK\tKp_roll_angle\t{self.value}\tSAVED\n"
                         self.connection.sendall(reply.encode())
                     else:
                         self.connection.sendall(b"manual command received\n")
@@ -149,7 +149,7 @@ class GuiTests(unittest.TestCase):
         self.assertEqual(len(self.app.tree.get_children()), 1)
         old_id = self.app.connection_id
         self.app.disconnect()
-        self.app.events.put((old_id, "rx", b"@HFAFC\t1\tEND\t1\n"))
+        self.app.events.put((old_id, "rx", b"@COFLY\t1\tEND\t1\n"))
         self.root.update()
         self.assertFalse(self.app.parameters)
         self.assertFalse(self.app.connected)

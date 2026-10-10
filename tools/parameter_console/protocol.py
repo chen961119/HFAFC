@@ -67,7 +67,7 @@ class ReplyFramer:
 
 
 def parse_reply(line: bytes):
-    if not line.startswith(b"@HFAFC\t"):
+    if not line.startswith(b"@COFLY\t"):
         return None
     try:
         fields = line.decode("ascii").split("\t")

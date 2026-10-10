@@ -1,4 +1,4 @@
-# HFAFC 参数配置与串口助手
+# CoFly Autopilot 参数配置与串口助手
 
 电脑端通过 USB `Serial` 连接 Teensy 4.1。窗口上方为参数表，下方为串口助手。
 
@@ -6,7 +6,7 @@
 
 1. 将当前工程编译得到的 `.pio/build/teensy41/firmware.hex` 烧录到对应飞机。
 2. 插入 SD 卡，重新给飞控上电。关闭占用该 COM 端口的 PlatformIO/Arduino 串口监视器。
-3. 断开旧软件的串口连接，双击 `dist/HFAFCParameterConsole.exe`，无需安装 Python。源码运行可双击 `start.cmd`；首次会创建本目录 `.venv` 并安装 pySerial，需要已安装包含 Tcl/Tk 的 Python 3。
+3. 断开旧软件的串口连接，双击 `dist/CoFlyParameterConsole.exe`，无需安装 Python。源码运行可双击 `start.cmd`；首次会创建本目录 `.venv` 并安装 pySerial，需要已安装包含 Tcl/Tk 的 Python 3。
 4. 选择 COM 端口，点击“连接”，再点击“读取参数”。波特率默认 921600；Teensy USB Serial 实际以 USB 速度传输。
 5. 双击参数的“当前值”单元格，原数值会选中变蓝，直接输入新数值，按 Enter 写入内存并保存 SD；Esc 或点击其他位置取消编辑。只有飞控确认 SD 保存、读回校验及内存更新均成功，窗口才更新当前值。
 6. 飞控重启后自动加载 SD 参数；再次读取可确认状态为“从 SD 加载”。
@@ -35,7 +35,7 @@ SD 文件不存在、损坏、身份/配置不匹配时使用源码默认值，�
 | 执行器方向（int） | `pwm_channel1_rev` ～ `pwm_channel5_rev`，仅接受 -1 或 +1，拒绝 0 |
 | 执行器安装偏置（float） | 本机 `pwm_channel1_trim` ～ `pwm_channel5_trim`，默认均为 0 μs |
 
-trim 表示相对 1500 μs 基准的本机安装偏置，不随 rev 反向；油门沿用 1100 μs 起点。每架飞机在自己的 USB 参数表中调整五路 trim，写入自己的 SD 卡，并在开机恢复；主机下发控制偏移，由各机本地应用 rev/trim。旧版参数文件含有已移除的安装偏置项，不能直接加载；更新后请重新设置本机参数并保存。INDI 舵机纯延迟由现有 64 点队列实现，实际延迟最多 63 个采样间隔。
+trim 表示相对 1500 μs 基准的本机安装偏置，不随 rev 反向；最终油门输出由中位、控制偏移、本机 rev/trim 及锁定/限幅共同决定，见 [固件指南](../../docs/firmware-guide.md)。每架飞机在自己的 USB 参数表中调整五路 trim，写入自己的 SD 卡，并在开机恢复；主机下发控制偏移，由各机本地应用 rev/trim。旧版参数文件含有已移除的安装偏置项，不能直接加载；更新后请重新设置本机参数并保存。INDI 舵机纯延迟由现有 64 点队列实现，实际延迟最多 63 个采样间隔。
 
 
 旧固件持续打印 `0` 来自 `actuator_output.cpp` 每个控制周期调用 `printLocalThrottle()`，打印尚未收到 Serial6 上级有效指令时默认为 0 的油门接收值。新版本默认关闭，开启后带 `parent_received` 和 `control_us` 标签；现在接收值 `Local_thro_control_us` 表示未加中位/rev/trim 的控制偏移，启动默认 -400，对应逻辑低油门 1100 μs。开关实际绑定 int32，可保存到 SD、上电恢复并参与 `if` 判断。需要增加其他整数参数时，将已有 int32 变量的地址注册到表中：
@@ -50,7 +50,9 @@ trim 表示相对 1500 μs 基准的本机安装偏置，不随 rev 反向；油
 
 ## 串口协议
 
-请求为 ASCII 行，响应为带 `@HFAFC` 前缀的 TSV 行。请求 ID 取 uint32，用于区分回复；手动读取/帮助可省略 ID，使用 0。
+项目名称、USB 响应前缀 `@COFLY` 与 `COFLY_PARAMS_V*` 文件头已统一更新。固件与参数软件需要同步更新。改名前的响应前缀和 SD 文件头不再识别；更新前请记录本机参数，更新后通过新版软件重新设置并保存。仅手动修改旧文件头会使 CRC 校验失败。
+
+请求为 ASCII 行，响应为带 `@COFLY` 前缀的 TSV 行。请求 ID 取 uint32，用于区分回复；手动读取/帮助可省略 ID，使用 0。
 
 ```text
 PARAM READ 1
@@ -61,15 +63,15 @@ PARAM HELP
 读取回复示例（`\t` 表示真实制表符）：
 
 ```text
-@HFAFC\t1\tBEGIN\tF-TEAM-7-INDI-EXP\t57\tSD_READY\tLOADED\t57\t0\t0
-@HFAFC\t1\tVALUE\tKp_roll_angle\tfloat\t0.25\t0\t10\tAttitude\tRoll angle P
-@HFAFC\t1\tVALUE\tusb_throttle_debug\tint\t0\t0\t1\tDebug\tThrottle USB log: 0 off, 1 on (10 Hz)
+@COFLY\t1\tBEGIN\tF-TEAM-7-INDI-EXP\t57\tSD_READY\tLOADED\t57\t0\t0
+@COFLY\t1\tVALUE\tKp_roll_angle\tfloat\t0.25\t0\t10\tAttitude\tRoll angle P
+@COFLY\t1\tVALUE\tusb_throttle_debug\tint\t0\t0\t1\tDebug\tThrottle USB log: 0 off, 1 on (10 Hz)
 ...其余参数...
-@HFAFC\t1\tEND\t57
+@COFLY\t1\tEND\t57
 ```
 
-写入成功：`@HFAFC\t2\tOK\tKp_roll_angle\tfloat\t0.3\tSAVED`。
-错误：`@HFAFC\t2\tERROR\tSD_WRITE\tSD save/verification failed; RAM unchanged`。
+写入成功：`@COFLY\t2\tOK\tKp_roll_angle\tfloat\t0.3\tSAVED`。
+错误：`@COFLY\t2\tERROR\tSD_WRITE\tSD save/verification failed; RAM unchanged`。
 
 软件收到完整 BEGIN/VALUE/END 后才更新参数表；普通日志同时显示。串口助手手动 SET 后可点击“读取参数”刷新参数表。只支持已注册变量，不接受任意内存地址。float32 以最多 9 位有效数字的简短十进制精确往返，int32 以十进制整数保存，避免大整数经 float32 丢失精度。新版软件也支持读取旧版不带类型的浮点协议。
 
@@ -78,7 +80,7 @@ PARAM HELP
 SD 根目录使用 `params.cfg`（当前主文件）和 `params_backup.cfg`（上次成功保存的备份）：
 
 ```text
-HFAFC_PARAMS_V3 F-TEAM-7-INDI-EXP
+COFLY_PARAMS_V3 F-TEAM-7-INDI-EXP
 GEN=1
 COUNT=57
 Kp_roll_angle:float=0.25
@@ -115,7 +117,7 @@ MicroConfig 的交互菜单会等待用户输入，不适合直接放入飞控�
 
 ## 构建软件与测试
 
-在本目录执行 `./build.ps1` 可生成 Windows exe。运行依赖在 `requirements.txt`；测试/打包依赖在 `requirements-dev.txt`。
+在本目录执行 `./build.ps1` 可生成 `dist/CoFlyParameterConsole.exe`。打包产物不随源码提交，应先构建再启动。运行依赖在 `requirements.txt`；测试/打包依赖在 `requirements-dev.txt`。
 
 在仓库根目录执行：
 
@@ -123,12 +125,6 @@ MicroConfig 的交互菜单会等待用户输入，不适合直接放入飞控�
 & ./tools/parameter_console/.venv/Scripts/python.exe -m unittest discover -s tools/parameter_console -p 'test_*.py' -v
 ```
 
-固件参数模块主机测试使用可选 Zig C++ 编译器（`pip install ziglang==0.13.0`），通过模拟串口和 SD 直接运行实际服务代码，并使用与工程相同的 `-O3 -ffast-math`：
-
-```powershell
-$env:ZIG_GLOBAL_CACHE_DIR = Join-Path (Get-Location) '.pio/zig-cache'
-& ./tools/parameter_console/.venv/Scripts/python.exe -m ziglang c++ -std=c++17 -O3 -ffast-math -UNDEBUG -Itests/firmware_mocks -Iinclude src/parameter_service.cpp tests/test_parameter_service.cpp -o .pio/parameter_service_tests.exe
-& ./.pio/parameter_service_tests.exe
-```
+历史固件参数模块主机测试曾使用模拟串口和 SD 运行服务代码。当前仓库未包含其 `tests/firmware_mocks` 与 `tests/test_parameter_service.cpp`，因此这里不提供可直接执行的命令。以下覆盖范围是历史验证记录。
 
 主机测试覆盖协议分片、混合日志、USB 输出背压、输入范围和 NaN/Inf、SD 失败时内存保持、损坏文件回退、完整加载、配置身份、序号回绕、普通十进制 float32 往返与极值、int32 极值、V1/V2 文件迁移、512 项大文件读写、注册表扩容及 rev 零值拒绝。此前电脑端 12 项测试还覆盖完整读取 75/512 项参数、容量越界拒绝、排序、数字显示、十六进制切换、单元格选中/回车保存/Esc 取消及小窗口控件可见性。GUI 自动测试使用本机 socket 模拟飞控；此前真实 COM4 的参数读取、写入、SD 保存、完整断电上电恢复及原值恢复已验证，范围与已发现问题见 [板上测试记录](BOARD_TEST_REPORT.md)。

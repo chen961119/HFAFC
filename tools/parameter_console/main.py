@@ -1,4 +1,4 @@
-"""HFAFC USB parameter editor and serial terminal. Run: python main.py"""
+"""CoFly Autopilot USB parameter editor and serial terminal. Run: python main.py"""
 import codecs
 from collections import deque
 import re
@@ -23,7 +23,7 @@ MAX_PARAMETERS = 512
 class ParameterConsole:
     def __init__(self, root):
         self.root = root
-        root.title("HFAFC 参数配置与串口助手")
+        root.title("CoFly Autopilot 参数配置与串口助手")
         root.geometry("1160x780")
         root.minsize(760, 520)
         self.events = queue.Queue()

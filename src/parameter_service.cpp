@@ -247,11 +247,11 @@ bool readParameterFile(const char *path, double *values, uint32_t &sequence,
   char *save;
   char *line = strtok_r(data, "\n", &save);
   char header[128];
-  snprintf(header, sizeof(header), "HFAFC_PARAMS_V1 %s", profile);
+  snprintf(header, sizeof(header), "COFLY_PARAMS_V1 %s", profile);
   const bool legacy = line && !strcmp(line, header);
-  snprintf(header, sizeof(header), "HFAFC_PARAMS_V2 %s", profile);
+  snprintf(header, sizeof(header), "COFLY_PARAMS_V2 %s", profile);
   const bool v2 = line && !strcmp(line, header);
-  snprintf(header, sizeof(header), "HFAFC_PARAMS_V3 %s", profile);
+  snprintf(header, sizeof(header), "COFLY_PARAMS_V3 %s", profile);
   const bool v3 = line && !strcmp(line, header);
   if (!legacy && !v2 && !v3) return false;
   if (needsMigration && !v3) *needsMigration = true;
@@ -336,7 +336,7 @@ bool readParameterFile(const char *path, double *values, uint32_t &sequence,
 
 bool writeSnapshot(const char *path, const double *values, uint32_t sequence) {
   char (&data)[FILE_SIZE] = fileData;
-  size_t used = snprintf(data, sizeof(data), "HFAFC_PARAMS_V3 %s\nGEN=%lu\nCOUNT=%u\n",
+  size_t used = snprintf(data, sizeof(data), "COFLY_PARAMS_V3 %s\nGEN=%lu\nCOUNT=%u\n",
                          profile, static_cast<unsigned long>(sequence), static_cast<unsigned>(count));
   for (size_t i = 0; i < count; ++i) {
     char value[VALUE_SIZE];
@@ -418,7 +418,7 @@ bool saveSnapshot(const double *values, bool preserveStoredFile = false) {
 }
 
 void queueReply(uint32_t id, const char *format, ...) {
-  int prefix = snprintf(txLine, sizeof(txLine), "@HFAFC\t%lu\t",
+  int prefix = snprintf(txLine, sizeof(txLine), "@COFLY\t%lu\t",
                         static_cast<unsigned long>(id));
   va_list args;
   va_start(args, format);

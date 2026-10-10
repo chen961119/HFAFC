@@ -1,4 +1,6 @@
-# Highly Flexible Aircraft Flight Controller：仓库知识库
+# CoFly Autopilot：仓库知识库
+
+> 历史分析归档：本文保留模块拆分前的代码快照、行号和验证记录。文中的“当前代码”指分析时的版本；现行配置、模块位置和输出行为见 [架构说明](../architecture.md) 与 [固件指南](../firmware-guide.md)。动态分配调用现已注释，MT6701 使用 Wire1，执行器已有统一锁定与最终限幅。
 
 > 基于 2026-07-22 的代码扫描。本文描述当前源码实际行为；修改 `src/main.cpp` 顶部的条件编译宏后，硬件角色和控制路径会随之改变。
 
@@ -35,14 +37,14 @@
 标准编译命令：
 
 ```powershell
-& 'C:\Users\Chen\.platformio\penv\Scripts\platformio.exe' run
+pio run
 ```
 
 上传与监视器常用命令：
 
 ```powershell
-& 'C:\Users\Chen\.platformio\penv\Scripts\platformio.exe' run --target upload
-& 'C:\Users\Chen\.platformio\penv\Scripts\platformio.exe' device monitor
+pio run --target upload
+pio device monitor
 ```
 
 2026-07-22 验证结果：编译成功，生成 `.pio/build/teensy41/firmware.elf` 和 `firmware.hex`。FLASH 为代码 239,388 B、数据 115,628 B、头 8,500 B；RAM1 使用变量 120,672 B、代码 236,312 B、填充 25,832 B，局部变量剩余 141,472 B；RAM2 使用 12,416 B。

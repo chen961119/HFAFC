@@ -1,5 +1,7 @@
 # 复合柔性多体飞机控制框架与控制律分析
 
+> 历史分析归档：本文保留模块拆分前的代码快照、行号和验证记录。文中的“当前代码”指分析时的版本；现行配置、模块位置和输出行为见 [架构说明](../architecture.md) 与 [固件指南](../firmware-guide.md)。动态分配调用现已注释，MT6701 使用 Wire1，执行器已有统一锁定与最终限幅。
+
 ## 1. 分析范围与结论
 
 本文综合以下三类证据：
@@ -642,8 +644,8 @@ $$
 
 ## 12. 证据索引
 
-- 论文：仓库中的 `Zhu 等 - 2025 - Aerodynamics-driven morphing control and flight test for compound flexible multibody aircraft.pdf`，重点为 PDF 第 5–8 页，式 (16)–(21)、(27)–(39) 与图 6。
-- 仓库知识：`docs/REPOSITORY_KNOWLEDGE.md`，第 4、5、9 节。
+- 论文：[Zhu 等（2025）论文](../references/zhu-2025-morphing-control.pdf)，重点为 PDF 第 5–8 页，式 (16)–(21)、(27)–(39) 与图 6。
+- 仓库知识：[历史仓库知识](REPOSITORY_KNOWLEDGE.md)，第 4、5、9 节。
 - 当前宏和主循环：`src/main.cpp:397-432,1461-1872`。
 - 等效姿态和串级控制：`src/main.cpp:3419-3700`。
 - 俯仰 INDI：`src/main.cpp:3791-3982`。

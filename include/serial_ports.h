@@ -3,7 +3,7 @@
 #include <Arduino.h>
 
 // 串口硬件映射集中在这里；业务模块按用途使用名称。
-#if defined(HFAFC_TEENSY_DEBUG)
+#if defined(COFLY_TEENSY_DEBUG)
 // 调试时普通打印丢弃、参数入口不读取，避免破坏同一串口上的 GDB 数据。
 class QuietUsbSerial : public Stream {
 public:
