@@ -33,7 +33,7 @@
 
 ## VS Code Teensy 板上断点调试
 
-连接 Teensy，打开“运行和调试”，选择“TeensyDebug：编译、上传并调试”，按 F5。程序在板上运行，单个 USB 串口专供 GDB 设置断点和查看变量；调试固件关闭普通 USB 输出和参数通信。使用参数软件时上传普通 `teensy41` 固件。详见 [板上调试说明](../tools/teensy_debug/README.md)。
+连接 Teensy，打开“运行和调试”，选择“TeensyDebug：编译、上传并调试”，按 F5。调试固件通过同一根 USB 线提供两个虚拟串口：`Serial` 保留地面站通信和普通输出，`SerialUSB1` 用于 GDB 设置断点和查看变量；任务终端显示各自 COM 号。初始暂停后按 F5 继续，再连接地面站；断点暂停期间地面站请求也暂停处理。普通 `teensy41` 固件保持单串口。详见 [板上调试说明](../tools/teensy_debug/README.md)。
 克隆到新电脑后，先执行一次 PlatformIO 构建。本机的 `.vscode` 调试配置会自动生成，不纳入 Git。
 
 ## MT6701 夹角传感器

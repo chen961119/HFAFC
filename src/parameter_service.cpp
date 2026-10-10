@@ -296,46 +296,56 @@ void applyCommittedParameters() {
   if (rebootRequired) setFlightLocked(true);
 }
 
-bool saveOne(size_t index, double value) {
-  if (index == count || table[index].readOnly || !validValue(index, value)) return false;
+enum class SaveResult { Rejected, RamOnly, Saved };
+SaveResult saveOne(size_t index, double value) {
+  if (index == count || table[index].readOnly || !validValue(index, value)) return SaveResult::Rejected;
   if (!table[index].integer) value=static_cast<float>(value);
   if ((table[index].storage == ParameterStorage::EEPROM || table[index].id >= 1000 ||
-       table[index].effect == ParameterEffect::Reboot) && !isFlightLocked()) return false;
+       table[index].effect == ParameterEffect::Reboot) && !isFlightLocked()) return SaveResult::Rejected;
   for (size_t i=0; i<count; ++i) candidate[i] = table[i].read();
   candidate[index] = value;
   const size_t idIndex = parameterIndex(1001), countIndex = parameterIndex(1002);
   if (idIndex < count && countIndex < count &&
-      !validAircraftConfiguration(candidate[idIndex], candidate[countIndex])) return false;
+      !validAircraftConfiguration(candidate[idIndex], candidate[countIndex])) return SaveResult::Rejected;
   bool ee = table[index].storage == ParameterStorage::EEPROM;
   bool sd = !ee;
-  if (table[index].id >= 1101 && table[index].id <= 1112) {
-    const size_t marker = parameterIndex(1113);
-    if (marker == count) return false;
+  const bool immediate = table[index].effect == ParameterEffect::Immediate;
+  const SaveResult failed = immediate ? SaveResult::RamOnly : SaveResult::Rejected;
+  const bool calibrationOffset = table[index].id >= 1101 && table[index].id <= 1112;
+  const size_t marker = parameterIndex(1113);
+  if (calibrationOffset && marker == count) return SaveResult::Rejected;
+  const double oldValue = table[index].read();
+  // Runtime edits are independent of persistence; validate before changing RAM.
+  if (immediate) {
+    table[index].write(value);
+    if (calibrationOffset) { table[marker].write(0); loadImuCalibration(); }
+  }
+  if (calibrationOffset) {
     candidate[marker] = 0;
     ee |= table[marker].storage == ParameterStorage::EEPROM;
     sd |= table[marker].storage == ParameterStorage::SD;
     // Guard the marker in its own medium before a possible cross-medium update.
     if (table[index].storage != table[marker].storage) {
       memcpy(guarded, candidate, count*sizeof(double));
-      guarded[index] = table[index].read();
+      guarded[index] = oldValue;
       if (!persist(guarded, table[marker].storage == ParameterStorage::SD,
-                   table[marker].storage == ParameterStorage::EEPROM)) return false;
+                   table[marker].storage == ParameterStorage::EEPROM)) return failed;
       table[marker].write(0);
       loadImuCalibration();
     }
   }
-  if (sd && !storageReady) return false;
+  if (sd && !storageReady) return failed;
   if (!persist(candidate, sd, ee)) {
     const size_t marker=parameterIndex(1113);
     double durable;
     if (marker<count && readEEPROMParameter(table[marker],durable) && durable==0) {
       table[marker].write(0); loadImuCalibration();
     }
-    return false;
+    return failed;
   }
   applyCommittedParameters();
   if (table[index].id >= 1101 && table[index].id <= 1112) loadImuCalibration();
-  return true;
+  return SaveResult::Saved;
 }
 
 void queueReply(uint32_t id, const char *format, ...) {
@@ -386,11 +396,11 @@ void handleCommand(char *line) {
     listId = id;
     listIndex = 0;
     listing = true;
-    queueReply(id, "BEGIN\t%s\t%u\t%s\t%s\t%u\t%u\t%u", profile,
+    queueReply(id, "BEGIN\t%s\t%u\t%s\t%s\t%u\t%u\t%u\t%lu", profile,
                static_cast<unsigned>(count), storageReady ? "SD_READY" : "NO_SD",
                loadState, static_cast<unsigned>(loadStats.matched),
                static_cast<unsigned>(loadStats.defaultsUsed),
-               static_cast<unsigned>(loadStats.skipped));
+               static_cast<unsigned>(loadStats.skipped), static_cast<unsigned long>(generation));
   } else if (!strcmp(tokens[1], "SET") && tokenCount == 5) {
     size_t index = 0;
     while (index < count && strcmp(tokens[3], table[index].name)) ++index;
@@ -404,16 +414,18 @@ void handleCommand(char *line) {
          table[index].effect == ParameterEffect::Reboot) && !isFlightLocked()) {
       error(id, "LOCK_REQUIRED", "Lock aircraft before changing reboot parameters or calibration"); return;
     }
-    if (table[index].storage == ParameterStorage::SD && !storageReady) {
+    if (table[index].storage == ParameterStorage::SD && !storageReady && table[index].effect == ParameterEffect::Reboot) {
       error(id, "NO_SD", "SD card unavailable; RAM unchanged"); return;
     }
-    if (!saveOne(index, value)) {
+    const SaveResult result = saveOne(index, value);
+    if (result == SaveResult::Rejected) {
       error(id, "SAVE_FAILED", "Configuration invalid or persistent write/verification failed"); return;
     }
     char formatted[VALUE_SIZE];
     formatValue(index, value, formatted, sizeof(formatted));
-    queueReply(id, "OK\t%s\t%s\t%s\tSAVED", table[index].name,
-               table[index].type(), formatted);
+    queueReply(id, "OK\t%s\t%s\t%s\t%s\t%lu", table[index].name,
+               table[index].type(), formatted, result == SaveResult::Saved ? "SAVED" : "RAM_ONLY",
+               static_cast<unsigned long>(generation));
   } else {
     error(id, "SYNTAX", "Use PARAM READ [id] or PARAM SET id name value");
   }
@@ -490,7 +502,7 @@ void initializeParameterService(bool sdReady) {
                    eepromParameterState(),aircraftName(),aircraftCount());
 }
 
-bool saveParameterValue(uint16_t id, double value) { return saveOne(parameterIndex(id),value); }
+bool saveParameterValue(uint16_t id, double value) { return saveOne(parameterIndex(id),value) == SaveResult::Saved; }
 bool parameterRebootRequired() { return rebootRequired; }
 
 bool saveImuCalibrationParameters(const float *offsets) {

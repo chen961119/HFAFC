@@ -16,6 +16,7 @@ try:
 except ImportError as exc:
     raise SystemExit("缺少 pySerial。请运行：python -m pip install -r requirements.txt") from exc
 from protocol import ReplyFramer, parameter_from_fields, validate_edit, format_value
+from parameter_file import FILE_LIMIT, CrcMismatchError, encode_sd_file, decode_sd_file
 
 MAX_PARAMETERS = 512
 
@@ -33,6 +34,9 @@ class ParameterConsole:
         self.request_id = 0
         self.pending = None
         self.parameters = {}
+        self.parameter_profile = None
+        self.parameter_generation = 0
+        self.file_import = None
         self.received_parameters = {}
         self.framer = ReplyFramer()
         self.decoder = codecs.getincrementaldecoder("utf-8")("replace")
@@ -82,16 +86,15 @@ class ParameterConsole:
         self.baud_box.pack(side="left")
         self.connect_button = ttk.Button(connection, text="连接", command=self.toggle_connection)
         self.connect_button.pack(side="left", padx=10)
-        commands = connection
-        if hasattr(self, "connection_parent"):
-            commands = ttk.Frame(self.connection_parent)
-            commands.grid(row=1, column=0, sticky="w", pady=12)
-        self.read_button = ttk.Button(commands, text="读取参数", command=self.read_parameters)
-        self.read_button.pack(side="left")
-        self.help_button = ttk.Button(commands, text="命令说明", command=self.send_help)
-        self.help_button.pack(side="left", padx=8)
+        self.read_button = self.help_button = None
+        if not hasattr(self, "connection_parent"):
+            self.read_button = ttk.Button(connection, text="读取参数", command=self.read_parameters)
+            self.read_button.pack(side="left")
+            self.help_button = ttk.Button(connection, text="命令说明", command=self.send_help)
+            self.help_button.pack(side="left", padx=8)
 
-        ttk.Label(outer, textvariable=self.status, wraplength=710).grid(row=1, column=0, sticky="w", pady=(0, 8))
+        if not hasattr(self, "parameter_parent"):
+            ttk.Label(outer, textvariable=self.status, wraplength=710).grid(row=1, column=0, sticky="w", pady=(0, 8))
         parameter_area = ttk.Labelframe(outer, text="参数表", padding=8)
         parameter_area.grid(row=2, column=0, sticky="nsew")
         search = ttk.Frame(parameter_area)
@@ -199,6 +202,9 @@ class ParameterConsole:
         self._update_controls()
 
     def disconnect(self):
+        self.file_import = None
+        self.parameter_profile = None
+        self.parameter_generation = 0
         if self.worker:
             self.worker.stop()
             self.worker.join(timeout=0.75)
@@ -221,9 +227,11 @@ class ParameterConsole:
         self.refresh_button.configure(state="disabled" if self.worker else "normal")
         self.send_button.configure(state=state)
         self.command_box.configure(state=state)
-        self.help_button.configure(state=state)
-        idle = self.connected and self.pending is None
-        self.read_button.configure(state="normal" if idle else "disabled")
+        if self.help_button is not None:
+            self.help_button.configure(state=state)
+        idle = self.connected and self.pending is None and self.file_import is None
+        if self.read_button is not None:
+            self.read_button.configure(state="normal" if idle else "disabled")
         if self.edit_box is not None and not idle:
             self._cancel_edit()
 
@@ -351,9 +359,82 @@ class ParameterConsole:
         for index, name in enumerate(sorted(self.tree.get_children(), key=key, reverse=self.sort_reverse)):
             self.tree.move(name, "", index)
 
+    def save_parameters_to_file(self):
+        if self.pending or self.file_import is not None or getattr(self, "gcs_pending", None):
+            return
+        try:
+            data = encode_sd_file(self.parameters, self.parameter_profile, self.parameter_generation)
+            path = filedialog.asksaveasfilename(title="保存 SD 参数到电脑", defaultextension=".cfg",
+                                              initialfile="params.cfg", filetypes=[("CoFly 参数", "*.cfg"), ("所有文件", "*.*")])
+            if not path:
+                return
+            Path(path).write_bytes(data)
+            self.status.set(f"已保存 {sum(p.storage == 'SD' for p in self.parameters.values())} 项 SD 参数到电脑：{path}（不含 EEPROM 参数）")
+        except (ValueError, OSError) as exc:
+            self.status.set(f"保存电脑文件失败：{exc}")
+
+    def load_parameters_from_file(self):
+        if not self.connected or self.pending or self.file_import is not None or not self.parameter_profile or getattr(self, "gcs_pending", None):
+            self.status.set("请先连接飞控并读取完整参数")
+            return
+        path = filedialog.askopenfilename(title="从电脑读取 SD 参数并应用到飞控",
+                                         filetypes=[("CoFly 参数", "*.cfg"), ("所有文件", "*.*")])
+        if not path:
+            return
+        try:
+            with open(path, "rb") as source:
+                data = source.read(FILE_LIMIT)
+            try:
+                values = decode_sd_file(data, self.parameters, self.parameter_profile)
+            except CrcMismatchError:
+                # Validate every parameter before offering to accept a manual edit.
+                values = decode_sd_file(data, self.parameters, self.parameter_profile, allow_crc_mismatch=True)
+                if not messagebox.askyesno(
+                        "参数文件 CRC 不匹配",
+                        "文件内容与 CRC 校验值不匹配，可能经过手动编辑，也可能已损坏。\n\n"
+                        "参数名称、类型、范围、完整性及硬件/控制配置检查已通过。\n"
+                        "是否继续通过 USB 将这些参数应用到飞控？\n\n"
+                        "此操作不会修改电脑上的原文件；重新保存到文件会生成正确的 CRC。",
+                        parent=self.root, default=messagebox.NO):
+                    self.status.set("已取消文件导入，飞控未修改")
+                    return
+        except (ValueError, OSError) as exc:
+            self.status.set(f"文件导入失败，飞控未修改：{exc}")
+            return
+        self.file_import = {"queue": deque((name, value) for name, value in values.items() if not self.parameters[name].read_only),
+                            "done": 0, "ram_only": 0, "acked": False}
+        self._next_file_parameter()
+
+    def _next_file_parameter(self):
+        importing = self.file_import
+        if importing is None:
+            return
+        # A native file dialog can let Tk deliver an automatic CAPS request.
+        # Drain that request before consuming the first queued parameter.
+        if getattr(self, "gcs_pending", None):
+            self.root.after(30, self._next_file_parameter)
+            return
+        if not importing["queue"]:
+            self.file_import = None
+            self.status.set(f"文件导入完成：已确认应用 {importing['done']} 项 SD 参数，其中 {importing['ram_only']} 项仅内存生效、未持久保存；EEPROM 参数未修改")
+            self._update_controls()
+            return
+        name, value = importing["queue"].popleft()
+        self.status.set(f"正在导入 {name}，已确认 {importing['done']} 项")
+        self._start_request("SET", name, value)
+
     def _finish_request(self, message):
+        importing = self.file_import
         self.pending = None
         self.status.set(message)
+        if importing is not None:
+            if importing["acked"]:
+                importing["acked"] = False
+                self._next_file_parameter()
+                return
+            done = importing["done"]
+            self.file_import = None
+            self.status.set(f"文件导入已停止，已确认应用 {done} 项；{message}。请重新读取确认；已应用项未撤销")
         self._update_controls()
 
     def _handle_reply(self, reply):
@@ -372,16 +453,20 @@ class ParameterConsole:
                 }
                 self._finish_request("失败：" + messages.get(fields[0], " / ".join(fields)))
             elif self.pending["kind"] == "READ":
-                if kind == "BEGIN" and len(fields) in (4, 7):
+                if kind == "BEGIN" and len(fields) in (4, 7, 8):
                     count = int(fields[1])
                     if not 0 < count <= MAX_PARAMETERS:
                         raise ValueError("参数数量无效")
                     self.pending.update(count=count, profile=fields[0], storage=fields[2], source=fields[3])
-                    if len(fields) == 7:
+                    if len(fields) >= 7:
                         matched, defaults_used, skipped = map(int, fields[4:7])
                         if min(matched, defaults_used, skipped) < 0 or matched + defaults_used != count:
                             raise ValueError("参数迁移统计无效")
                         self.pending["migration_stats"] = (matched, defaults_used, skipped)
+                    generation = int(fields[7]) if len(fields) == 8 else 0
+                    if not 0 <= generation <= 0xffffffff:
+                        raise ValueError("SD 代次无效")
+                    self.pending["generation"] = generation
                     self.received_parameters.clear()
                 elif kind == "VALUE" and self.pending["count"] is not None:
                     parameter = parameter_from_fields(fields)
@@ -394,6 +479,8 @@ class ParameterConsole:
                             len(self.received_parameters) != self.pending["count"]):
                         raise ValueError("参数响应不完整，请重新读取")
                     self.parameters = dict(self.received_parameters)
+                    self.parameter_profile = self.pending["profile"]
+                    self.parameter_generation = self.pending["generation"]
                     self._render_table()
                     pending = self.pending
                     storage = "SD 就绪" if pending["storage"] == "SD_READY" else "SD 不可用"
@@ -404,20 +491,32 @@ class ParameterConsole:
                     details = ((f" · SD 匹配 {stats[0]} / 其余 EEPROM 或默认 {stats[1]} / 跳过旧项 {stats[2]}" if pending["profile"].startswith("BOARD-") else f" · 开机匹配 {stats[0]} / 默认 {stats[1]} / 跳过旧项 {stats[2]}")
                                if stats and (stats[1] or stats[2]) else "")
                     self._finish_request(f"已读取 {len(self.parameters)} 项 · {pending['profile']} · {storage} · {source}{details}")
-            elif kind == "OK" and len(fields) in (3, 4):
-                if len(fields) == 4:
-                    name, dtype, text, saved = fields
+            elif kind == "OK" and len(fields) in (3, 4, 5):
+                if len(fields) >= 4:
+                    name, dtype, text, saved = fields[:4]
                     if dtype != self.parameters[name].dtype:
                         raise ValueError("写入确认的类型不匹配")
                 else:
                     name, text, saved = fields
-                if name != self.pending["name"] or saved != "SAVED":
+                if name != self.pending["name"] or saved not in ("SAVED", "RAM_ONLY"):
                     raise ValueError("写入确认内容不匹配")
+                if saved == "RAM_ONLY" and self.parameters[name].effect != "IMMEDIATE":
+                    raise ValueError("重启参数不能仅修改内存")
+                if len(fields) == 5:
+                    generation = int(fields[4])
+                    if not 0 <= generation <= 0xffffffff:
+                        raise ValueError("SD 代次无效")
+                    self.parameter_generation = generation
                 value = validate_edit(self.parameters[name], text)
                 self.parameters[name] = replace(self.parameters[name], value=value)
                 self._render_table()
                 self.new_value.set(f"{format_value(value, self.parameters[name].dtype)}")
-                self._finish_request(f"{name} = {format_value(value, self.parameters[name].dtype)}，已保存 {self.parameters[name].storage}" + ("；重启后生效" if self.parameters[name].effect == "REBOOT" else ""))
+                if self.file_import is not None:
+                    self.file_import["done"] += 1
+                    self.file_import["ram_only"] += saved == "RAM_ONLY"
+                    self.file_import["acked"] = True
+                outcome = f"已保存 {self.parameters[name].storage}" if saved == "SAVED" else "内存已生效，未持久保存；重启可能恢复旧值"
+                self._finish_request(f"{name} = {format_value(value, self.parameters[name].dtype)}，{outcome}" + ("；重启后生效" if self.parameters[name].effect == "REBOOT" else ""))
         except (ValueError, KeyError) as exc:
             self._finish_request(f"响应错误：{exc}")
 

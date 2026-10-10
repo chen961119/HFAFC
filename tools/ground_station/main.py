@@ -87,8 +87,14 @@ class GroundStation(ParameterConsole):
         self.connection_parent.pack(fill="x", pady=12)
         self.connection_parent.columnconfigure(0, weight=1)
         super()._build_widgets()
-        self.parameter_read = ttk.Button(self.parameter_parent, text="读取参数", command=self.read_parameters)
-        self.parameter_read.pack(before=self.parameter_parent.winfo_children()[0], anchor="w", padx=12)
+        parameter_actions = ttk.Frame(self.parameter_parent)
+        parameter_actions.pack(before=self.parameter_parent.winfo_children()[0], fill="x", padx=12, pady=(8, 0))
+        self.parameter_read = self.read_button = ttk.Button(parameter_actions, text="读取参数", command=self.read_parameters)
+        self.parameter_read.pack(side="left")
+        self.parameter_load_file = ttk.Button(parameter_actions, text="从文件读取", command=self.load_parameters_from_file)
+        self.parameter_load_file.pack(side="left", padx=8)
+        self.parameter_save_file = ttk.Button(parameter_actions, text="保存到文件", command=self.save_parameters_to_file)
+        self.parameter_save_file.pack(side="left")
         self._build_flight()
         self._build_calibration()
         self._build_radio()
@@ -267,9 +273,12 @@ class GroundStation(ParameterConsole):
     def _update_controls(self):
         super()._update_controls()
         if hasattr(self, "parameter_read"):
-            idle = self.connected and self.pending is None and self.gcs_pending is None
+            idle = self.connected and self.pending is None and self.gcs_pending is None and self.file_import is None
             self.read_button.configure(state="normal" if idle else "disabled")
             self.parameter_read.configure(state="normal" if idle else "disabled")
+            files_ready = idle and bool(self.parameters) and bool(self.parameter_profile)
+            self.parameter_load_file.configure(state="normal" if files_ready else "disabled")
+            self.parameter_save_file.configure(state="normal" if files_ready else "disabled")
             self.probe_button.configure(state="normal" if idle else "disabled")
             self.reboot_button.configure(state="normal" if idle and self.caps.get("reboot") == "SUPPORTED" else "disabled")
             for button in self.action_buttons:
@@ -283,7 +292,7 @@ class GroundStation(ParameterConsole):
         super()._start_request(*args)
 
     def _request(self, verb, *args):
-        if not self.connected or self.pending or self.gcs_pending:
+        if not self.connected or self.pending or self.gcs_pending or self.file_import is not None:
             return
         self.request_id = (self.request_id + 1) & 0xffffffff
         self.gcs_pending = {"id": self.request_id, "verb": verb, "deadline": time.monotonic() + 3}
@@ -456,7 +465,7 @@ class GroundStation(ParameterConsole):
             self.gcs_pending = None
             self.status.set("地面站请求超时；请检查固件或重试识别" if verb == "CAPS" else "USB 请求超时，结果未确认")
             self._update_controls()
-        if self.connected and not self.pending and not self.gcs_pending:
+        if self.connected and not self.pending and not self.gcs_pending and self.file_import is None:
             if self.auto_probe:
                 self.auto_probe = False
                 self._request("CAPS")

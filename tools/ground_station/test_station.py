@@ -5,11 +5,14 @@ import threading
 import time
 import tkinter as tk
 import unittest
+from unittest.mock import patch
+from dataclasses import replace
 from pathlib import Path
 
 from main import GroundStation
 from protocol import ReplyFramer
 from station_protocol import decode_fields
+from parameter_file import encode_sd_file
 
 CAPS = "version=1\timu=BMI088_SPI\texternal=DISABLED\tairspeed=MS4525\trotate=MT6701\tbarometer=DISABLED\tradio=SBUS\tcalibration=STUB\tsensor_setting=STUB\tradio_calibration=STUB\tflight_modes=STUB\treboot=SUPPORTED"
 DATA = "ms=1000\troll=12.5\tpitch=-4\tyaw=32\tgx=1\tgy=2\tgz=3\tax=0\tay=0\taz=1\tairspeed=5.5\tangle=7\tangle_valid=1\trc1=1400\trc2=1500\trc3=1100\trc4=1600\trc5=1000\trc6=2000\tmode=MANUAL\tlocked=1"
@@ -58,6 +61,8 @@ class Controller:
                         body = {"CAPS": "CAPS\t" + CAPS, "DATA": "DATA\t" + DATA,
                                 "CONFIG": "CONFIG\t" + CONFIG, "REBOOT": "REBOOT\tstatus=REBOOTING"}.get(verb, "ERROR\tNOT_IMPLEMENTED\tReserved for V2")
                         reply = f"@COFLY\t{request_id}\t{body}\n"
+                    elif verb == "SET":
+                        reply = f"@COFLY\t{request_id}\tOK\t{command[3]}\tfloat\t{command[4]}\tSAVED\n"
                     else:
                         reply = (f"@COFLY\t{request_id}\tBEGIN\tA-TEAM-3\t1\tSD_READY\tLOADED\n"
                                  f"@COFLY\t{request_id}\tVALUE\tKp_roll_angle\tfloat\t0.25\t0\t10\tAttitude\tRoll P\n"
@@ -108,6 +113,26 @@ class StationTests(unittest.TestCase):
         self.assertEqual(self.app.metric_vars["groundspeed"].get(), "—")
         self.assertEqual(self.app.metric_vars["rc3"].get(), "1100 μs")
         self.assertEqual(len(self.app.sensor_tree.get_children()), 5)
+
+    def test_import_waits_for_caps_started_during_file_dialog(self):
+        self.app.show_page("参数")
+        self.wait_for(lambda: bool(self.app.caps) and self.app.gcs_pending is None)
+        self.app.read_parameters()
+        self.wait_for(lambda: "Kp_roll_angle" in self.app.parameters and self.app.pending is None)
+        profile = "BOARD-1234567887654321-TEAM-INDI-EXP"
+        self.app.parameter_profile = profile
+        parameters = {name: replace(p, value=.5) for name, p in self.app.parameters.items()}
+        path = Path(self.directory.name) / "params.cfg"
+        path.write_bytes(encode_sd_file(parameters, profile))
+        def choose_file(**_kwargs):
+            self.app._request("CAPS")
+            self.assertIsNotNone(self.app.gcs_pending)
+            return str(path)
+        with patch("parameter_view.filedialog.askopenfilename", side_effect=choose_file):
+            self.app.load_parameters_from_file()
+        self.wait_for(lambda: self.app.file_import is None)
+        self.assertIn("文件导入完成", self.app.status.get())
+        self.assertEqual(self.app.parameters["Kp_roll_angle"].value, .5)
 
     def test_reboot_button_and_disconnect_after_ack(self):
         self.app.show_page("通讯连接")

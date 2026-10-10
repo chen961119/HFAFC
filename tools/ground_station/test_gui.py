@@ -4,10 +4,13 @@ import threading
 import time
 import tkinter as tk
 import unittest
+from unittest.mock import patch, Mock
+from collections import deque
 from pathlib import Path
 import tempfile
 from main import ParameterConsole
 from protocol import Parameter
+from parameter_file import encode_sd_file
 
 
 class MockFlightController:
@@ -82,6 +85,92 @@ class MockFlightController:
 
 
 class GuiTests(unittest.TestCase):
+    def test_edited_file_requires_confirmation_before_usb_write(self):
+        self.app.connected = True
+        self.app.worker = Mock()
+        self.app.parameters = {"gain": Parameter("gain", .25, 0, 10, "T", "T")}
+        self.app.parameter_profile = "BOARD-1234567887654321-TEAM-INDI-EXP"
+        data = encode_sd_file(self.app.parameters, self.app.parameter_profile)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "params.cfg"
+            path.write_bytes(data.replace(b"0.25", b"0.5"))
+            with patch("parameter_view.filedialog.askopenfilename", return_value=str(path)), \
+                    patch("parameter_view.messagebox.askyesno", return_value=False) as confirm:
+                self.app.load_parameters_from_file()
+                confirm.assert_called_once()
+            self.app.worker.send.assert_not_called()
+            self.assertIsNone(self.app.file_import)
+            self.assertIn("已取消", self.app.status.get())
+            with patch("parameter_view.filedialog.askopenfilename", return_value=str(path)), \
+                    patch("parameter_view.messagebox.askyesno", return_value=True) as confirm:
+                self.app.load_parameters_from_file()
+                confirm.assert_called_once()
+            self.assertEqual(self.app.pending["name"], "gain")
+            self.assertIn(b"gain 0.5", self.app.worker.send.call_args.args[0])
+            self.assertEqual(path.read_bytes(), data.replace(b"0.25", b"0.5"))
+
+    def test_invalid_edited_file_cannot_be_confirmed_or_sent(self):
+        self.app.connected = True
+        self.app.worker = Mock()
+        self.app.parameters = {"gain": Parameter("gain", .25, 0, 10, "T", "T")}
+        self.app.parameter_profile = "BOARD-1234567887654321-TEAM-INDI-EXP"
+        data = encode_sd_file(self.app.parameters, self.app.parameter_profile)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "params.cfg"
+            path.write_bytes(data.replace(b"0.25", b"11"))
+            with patch("parameter_view.filedialog.askopenfilename", return_value=str(path)), \
+                    patch("parameter_view.messagebox.askyesno", return_value=True) as confirm:
+                self.app.load_parameters_from_file()
+                confirm.assert_not_called()
+            self.app.worker.send.assert_not_called()
+            self.assertIn("文件导入失败", self.app.status.get())
+
+    def test_file_import_stops_after_rejection_keeps_confirmed_ram_change(self):
+        self.app.connected = True
+        self.app.worker = Mock()
+        self.app.parameters = {name: Parameter(name, .25, 0, 10, "T", "T") for name in ("first", "second", "third")}
+        self.app.file_import = {"queue": deque([("second", 2), ("third", 3)]), "done": 0, "ram_only": 0, "acked": False}
+        self.app.pending = {"id": 9, "kind": "SET", "name": "first"}
+        self.app._handle_reply((9, "OK", ["first", "float", "1", "RAM_ONLY", "3"]))
+        self.assertEqual(self.app.pending["name"], "second")
+        self.app._handle_reply((self.app.pending["id"], "ERROR", ["LOCK_REQUIRED", "Lock first"]))
+        self.assertIsNone(self.app.file_import)
+        self.assertEqual(self.app.parameters["first"].value, 1)
+        self.assertEqual(self.app.parameters["third"].value, .25)
+        self.assertIn("已确认应用 1 项", self.app.status.get())
+        self.assertEqual(self.app.worker.send.call_count, 1)
+
+    def test_ram_only_ack_updates_table_without_claiming_saved(self):
+        self.app.parameters = {"gain": Parameter("gain", .25, 0, 10, "T", "T")}
+        self.app.pending = {"id": 9, "kind": "SET", "name": "gain"}
+        self.app._handle_reply((9, "OK", ["gain", "float", "2", "RAM_ONLY", "7"]))
+        self.assertEqual(self.app.parameters["gain"].value, 2)
+        self.assertEqual(self.app.parameter_generation, 7)
+        self.assertIn("未持久保存", self.app.status.get())
+
+    def test_local_file_save_and_serial_import_exclude_eeprom(self):
+        self.app.port.set(f"socket://127.0.0.1:{self.device.port}")
+        self.app.toggle_connection()
+        self.wait_for(lambda: self.app.connected)
+        self.app.parameters = {
+            "Kp_roll_angle": Parameter("Kp_roll_angle", .35, 0, 10, "T", "T"),
+            "aircraft_id": Parameter("aircraft_id", 1, 0, 7, "A", "A", "int", "EEPROM", "REBOOT"),
+        }
+        self.app.parameter_profile = "BOARD-1234567887654321-TEAM-INDI-EXP"
+        self.app.parameter_generation = 3
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "params.cfg"
+            with patch("parameter_view.filedialog.asksaveasfilename", return_value=str(path)):
+                self.app.save_parameters_to_file()
+            self.assertNotIn(b"aircraft_id", path.read_bytes())
+            with patch("parameter_view.filedialog.askopenfilename", return_value=str(path)):
+                self.app.load_parameters_from_file()
+            self.wait_for(lambda: self.app.file_import is None)
+            self.assertIn("文件导入完成", self.app.status.get())
+            self.assertTrue(any("SET" in c and "Kp_roll_angle" in c for c in self.device.commands))
+            self.assertFalse(any("aircraft_id" in c for c in self.device.commands))
+            self.assertEqual(self.app.parameters["aircraft_id"].value, 1)
+
     def test_eeprom_reboot_ack_and_read_only_editor(self):
         self.app.connected = True
         self.app.parameters = {

@@ -1,4 +1,4 @@
-"""Build/upload matching firmware and locate Teensy's single USB serial port."""
+"""Build/upload matching firmware and identify both Teensy USB CDC interfaces."""
 import argparse
 import os
 from pathlib import Path
@@ -7,10 +7,41 @@ import stat
 import subprocess
 import time
 import sys
+import re
 
 from serial.tools import list_ports
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+def usb_interface(port):
+    """Use interface metadata, never COM ordering (CDC0=ground, CDC2=GDB)."""
+    match = re.search(r"MI_([0-9a-f]{2})", getattr(port, "hwid", "") or "", re.I)
+    if match:
+        return int(match[1], 16)
+    # pyserial: Windows LOCATION=1-2:x.2; Linux LOCATION=1-2:1.2.
+    match = re.search(r":(?:x|\d+)\.(\d+)$", getattr(port, "location", "") or "", re.I)
+    return int(match[1]) if match else None
+
+
+def select_usb_ports(ports):
+    ports = [p for p in ports if p.vid == 0x16C0 and p.pid == 0x048B]
+    if len(ports) > 2:
+        raise RuntimeError("Multiple dual-serial Teensy boards: connect only one board.")
+    ground = [p for p in ports if usb_interface(p) == 0]
+    debug = [p for p in ports if usb_interface(p) == 2]
+    if len(ground) != 1 or len(debug) != 1:
+        return None
+    ground, debug = ground[0], debug[0]
+    for attribute in ("serial_number", "location"):
+        first = getattr(ground, attribute, None)
+        second = getattr(debug, attribute, None)
+        if attribute == "location":
+            first = first.split(":")[0] if first else None
+            second = second.split(":")[0] if second else None
+        if first and second and first != second:
+            raise RuntimeError("Ground station and GDB ports belong to different Teensy boards.")
+    return ground, debug
 
 
 def repair_library_cache():
@@ -70,16 +101,13 @@ def main():
         raise RuntimeError("Debug ELF not found: build/upload the debug environment first.")
     deadline = time.monotonic() + 20
     while True:
-        ports = [p for p in list_ports.comports()
-                 if p.vid == 0x16C0 and p.pid == 0x0483]
-        debug_ports = ports
-        if len(debug_ports) > 1:
-            raise RuntimeError("Multiple Teensy debug ports: connect only one board.")
-        if debug_ports:
-            port = debug_ports[0]
+        selected = select_usb_ports(list_ports.comports())
+        if selected:
+            ground_port, port = selected
             break
         if time.monotonic() >= deadline:
-            raise RuntimeError("Teensy USB serial port not found. Check USB/upload; "
+            raise RuntimeError("Teensy dual USB serial ports (VID 16C0 / PID 048B, interfaces 0 and 2) not found. "
+                               "Upload the new debug firmware and check USB enumeration/interface metadata; "
                                "PlatformIO success alone does not confirm board upload.")
         time.sleep(0.2)
     output = ROOT / ".pio/teensydebug"
@@ -89,7 +117,9 @@ def main():
         "set mem inaccessible-by-default off\n"
         f"target extended-remote \\\\.\\{port.device}\n", encoding="utf-8")
     print(f"TeensyDebug: {port.device}")
-    print("Debug firmware: this USB port is reserved for GDB; parameter/console traffic is disabled.")
+    print(f"Ground station / USB console: {ground_port.device}")
+    print("Debug firmware: two virtual serial ports on one USB cable. "
+          "Use the ground station port for parameters/console, and the debug port for GDB.")
 
 
 if __name__ == "__main__":
